@@ -1,0 +1,15 @@
+#!/bin/bash
+
+script_dir=$(dirname $(realpath $0))
+
+. $script_dir/nvim_library.sh
+
+# Check if NVIM_APPNAME is set, and if it is, build a conditional block
+if [ -n ${NVIM_APPNAME} ]; then
+  NVIM_APPNAME="--env NVIM_APPNAME=${NVIM_APPNAME}"
+else
+  NVIM_APPNAME=""
+fi
+
+# Launch Singularity
+$script_dir/ct_exec.sh "--$TOOL" ${NVIM_APPNAME} $NVIM_CONT_LOCATION nvim "$@"

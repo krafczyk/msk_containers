@@ -1,0 +1,8 @@
+#!/bin/bash
+
+script_dir=$(dirname $(realpath $0))
+
+. $script_dir/nvim_library.sh
+
+# Launch Singularity
+ct_shell.sh --$TOOL $NVIM_CONT_LOCATION

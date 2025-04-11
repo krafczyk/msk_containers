@@ -1,0 +1,11 @@
+#!/bin/bash
+
+script_dir=$(dirname $(realpath $0))
+
+. $script_dir/nvim_library.sh
+
+## Solve issue with Curl permissions
+mkdir -p $HOME/.local/share/mkchad/tmp
+
+# Launch Singularity
+$script_dir/ct_exec.sh "--$TOOL" --env NVIM_APPNAME="mkchad" --env XDG_RUNTIME_DIR=$HOME/.local/share/mkchad/tmp $NVIM_CONT_LOCATION nvim "$@"
