@@ -1,0 +1,9 @@
+Bootstrap: docker-archive
+From: nvim_container_aarch64.tar
+
+%environment
+    export CC=clang
+
+%runscript
+    # Run Neovim
+    nvim "$@"
