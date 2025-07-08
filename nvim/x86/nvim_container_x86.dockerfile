@@ -32,9 +32,9 @@ RUN pip3 install --prefix /usr \
 
 # Install Node.js and npm
 RUN mkdir -p /nvim && \
-    curl -sL https://nodejs.org/dist/v18.20.5/node-v18.20.5-linux-x64.tar.gz | tar -xzC /nvim
+    curl -sL https://nodejs.org/dist/v20.19.3/node-v20.19.3-linux-x64.tar.gz | tar -xzC /nvim
 
-ENV PATH="/nvim/node-v18.20.5-linux-x64/bin:$PATH"
+ENV PATH="/nvim/node-v20.19.3-linux-x64/bin:$PATH"
 
 RUN npm install -g neovim
 
