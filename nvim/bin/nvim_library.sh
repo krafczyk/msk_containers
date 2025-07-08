@@ -12,7 +12,7 @@ else
     exit 1
 fi
 
-NVIM_CONT_LOCATION="${HOME}/containers/neovim.sif"
+NVIM_CONT_LOCATION="${NVIM_CONT_LOCATION:=${HOME}/containers/neovim.sif}"
 # Check if the file $NVIM_CONT_LOCATION exists
 if [ ! -f $NVIM_CONT_LOCATION ]; then
   # Present an error message and exit if the file does not exist
