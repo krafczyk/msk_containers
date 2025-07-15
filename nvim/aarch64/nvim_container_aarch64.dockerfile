@@ -3,9 +3,10 @@ FROM fedora:rawhide AS nvim_container_base
 
 # Update and install essential packages
 RUN dnf update -y && \
-    dnf install -y wget git gcc-c++ \
+    dnf install -y wget git gcc gcc-c++ \
     make cmake zsh python3 python3-devel \
     python3-pip python3-virtualenv \
+    rust cargo \
     zip unzip tar gettext curl \
     java-21-openjdk-devel \
     java-21-openjdk-jmods \
@@ -17,22 +18,25 @@ RUN dnf update -y && \
     libstdc++-static \
     libvterm libvterm-devel \
     msgpack msgpack-devel \
-    clangd && \
+    clangd redhat-rpm-config libffi-devel \
+    openssl-devel && \
     dnf clean all
 
 # Generate the locales
 RUN localedef -i en_US -f UTF-8 en_US.UTF-8
 
 # Install needed python packages
-RUN pip3 install --prefix /usr openai jedi pynvim \
-    python-lsp-server[all]
+RUN pip3 install --prefix /usr \
+    "git+https://github.com/pydantic/pydantic@main#egg=pydantic" \
+    openai jedi pynvim python-lsp-server[all]
 
+ENV NODE_VER=20.19.3
 
 # Install Node.js and npm
 RUN mkdir -p /nvim && \
-    curl -sL https://nodejs.org/dist/v18.20.5/node-v18.20.5-linux-arm64.tar.gz | tar -xzC /nvim
+    curl -sL "https://nodejs.org/dist/v${NODE_VER}/node-v${NODE_VER}-linux-arm64.tar.gz" | tar -xzC /nvim
 
-ENV PATH="/nvim/node-v18.20.5-linux-arm64/bin:$PATH"
+ENV PATH="/nvim/node-v${NODE_VER}-linux-arm64/bin:$PATH"
 
 RUN npm install -g neovim
 
@@ -62,7 +66,7 @@ RUN echo "/usr/lib" > /etc/ld.so.conf.d/usr-lib.conf && \
 
 # Clone neovim
 RUN cd /nvim && \
-    git clone --depth 1 --branch v0.10.3 https://github.com/neovim/neovim
+    git clone --depth 1 --branch v0.11.2 https://github.com/neovim/neovim
 
 # Build depdendencies
 RUN cd /nvim/neovim && \
@@ -78,7 +82,7 @@ RUN cd /nvim/neovim && \
 # Install lua language server
 # Adjusted build process because tests fail on aarch64 on x64 host.
 # Build process copied from `make.sh` and modified to avoid tests
-RUN git clone --depth 1 --branch 3.13.4 https://github.com/LuaLS/lua-language-server /nvim/lua-language-server && \
+RUN git clone --depth 1 --branch 3.15.0 https://github.com/LuaLS/lua-language-server /nvim/lua-language-server && \
     cd /nvim/lua-language-server && \
     git submodule update --init --recursive && \
     pushd 3rd/luamake && \
