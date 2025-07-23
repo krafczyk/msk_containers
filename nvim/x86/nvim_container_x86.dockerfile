@@ -30,11 +30,13 @@ RUN pip3 install --prefix /usr \
     "git+https://github.com/pydantic/pydantic@main#egg=pydantic" \
     openai jedi pynvim python-lsp-server[all]
 
+ENV NODE_VER=20.19.3
+
 # Install Node.js and npm
 RUN mkdir -p /nvim && \
-    curl -sL https://nodejs.org/dist/v20.19.3/node-v20.19.3-linux-x64.tar.gz | tar -xzC /nvim
+    curl -sL "https://nodejs.org/dist/v${NODE_VER}/node-v${NODE_VER}-linux-x64.tar.gz" | tar -xzC /nvim
 
-ENV PATH="/nvim/node-v20.19.3-linux-x64/bin:$PATH"
+ENV PATH="/nvim/node-v${NODE_VER}-linux-x64/bin:$PATH"
 
 RUN npm install -g neovim
 
