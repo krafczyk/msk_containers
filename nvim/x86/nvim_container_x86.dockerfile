@@ -10,7 +10,7 @@ RUN dnf update -y && \
     zip unzip tar gettext curl \
     java-21-openjdk-devel \
     java-21-openjdk-jmods \
-    maven xsel which ripgrep \
+    maven xclip which ripgrep \
     glibc-locale-source \
     glibc-langpack-en \
     glibc-gconv-extra \
