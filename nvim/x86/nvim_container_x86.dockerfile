@@ -1,5 +1,5 @@
 # Use Fedora Rawhide for x86 as the base image
-FROM fedora:rawhide AS nvim_container_base
+FROM quay.io/fedora/fedora:43@sha256:a08659cad3f9c8279e70bea1feee02162a1751bda3103c55ba437707fa8efeca AS nvim_container_base
 
 # Update and install essential packages
 RUN dnf update -y && \
@@ -30,7 +30,7 @@ RUN pip3 install --prefix /usr \
     "git+https://github.com/pydantic/pydantic@main#egg=pydantic" \
     openai jedi pynvim python-lsp-server[all]
 
-ENV NODE_VER=20.19.3
+ENV NODE_VER=20.19.6
 
 # Install Node.js and npm
 RUN mkdir -p /nvim && \
@@ -44,12 +44,22 @@ ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk
 
 # Install eclipse
 # main branch to work around update issue in a toolchain component
-RUN cd /nvim && \
-    git clone https://github.com/eclipse-jdtls/eclipse.jdt.ls && \
-    cd ./eclipse.jdt.ls && \
-    ./mvnw clean verify -DskipTests=true
+ENV JDTLS_MILESTONE=1.56.0
+RUN set -eux;  cd /nvim; \
+    base="https://download.eclipse.org/jdtls/milestones/${JDTLS_MILESTONE}"; \
+    file="$(curl -fsSL ${base}/latest.txt | tr -d '\n')"; \
+    curl -fsSLO "${base}/${file}"; \
+    curl -fsSLO "${base}/${file}"; \
+    sum="$(curl -fsSL "${base}/${file}.sha256" \
+        | tr -d '\r' \
+        | grep -Eo '[0-9a-fA-F]{64}' \
+        | head -n1)"; \
+    test -n "${sum}"; \
+    echo "${sum}  ${file}" | sha256sum -c -; \
+    mkdir -p /nvim/jdtls; \
+    tar --no-same-owner --no-same-permissions -xzf "${file}" -C /nvim/jdtls --strip-components=1
 
-ENV PATH=/nvim/eclipse.jdt.ls/org.eclipse.jdt.ls.product/target/repository/bin:$PATH
+ENV PATH=/nvim/jdtls/bin:$PATH
 
 # Build/install LuaJit
 RUN cd /nvim && \
@@ -66,7 +76,7 @@ RUN echo "/usr/lib" > /etc/ld.so.conf.d/usr-lib.conf && \
 
 # Clone neovim
 RUN cd /nvim && \
-    git clone --depth 1 --branch v0.11.2 https://github.com/neovim/neovim
+    git clone --depth 1 --branch v0.11.6 https://github.com/neovim/neovim
 
 # Build depdendencies
 RUN cd /nvim/neovim && \
@@ -80,9 +90,9 @@ RUN cd /nvim/neovim && \
     cmake --install build
 
 # Install lua language server
-RUN git clone --depth 1 --branch 3.15.0 https://github.com/LuaLS/lua-language-server /nvim/lua-language-server && \
+RUN git clone --depth 1 --branch 3.17.1 https://github.com/LuaLS/lua-language-server /nvim/lua-language-server && \
     cd /nvim/lua-language-server && \
-    ./make.sh
+    bash ./make.sh
 
 ENV PATH="/nvim/lua-language-server/bin:$PATH"
 
