@@ -10,7 +10,8 @@ RUN dnf update -y && \
     zip unzip tar gettext curl \
     java-21-openjdk-devel \
     java-21-openjdk-jmods \
-    maven xclip which ripgrep \
+    maven xclip which ripgrep pgrep \
+    procps-ng iproute lsof \
     glibc-locale-source \
     glibc-langpack-en \
     glibc-gconv-extra \
@@ -30,7 +31,7 @@ RUN pip3 install --prefix /usr \
     "git+https://github.com/pydantic/pydantic@main#egg=pydantic" \
     openai jedi pynvim python-lsp-server[all]
 
-ENV NODE_VER=20.19.6
+ENV NODE_VER=22.22.3
 
 # Install Node.js and npm
 RUN mkdir -p /nvim && \
@@ -76,16 +77,20 @@ RUN echo "/usr/lib" > /etc/ld.so.conf.d/usr-lib.conf && \
 
 # Clone neovim
 RUN cd /nvim && \
-    git clone --depth 1 --branch v0.11.6 https://github.com/neovim/neovim
+    git clone --depth 1 --branch v0.12.2 https://github.com/neovim/neovim
 
-# Build depdendencies
+# Build dependencies
 RUN cd /nvim/neovim && \
-    cmake -S cmake.deps -B .deps -G Ninja -D CMAKE_BUILD_TYPE=RelWithDebInfo -DUSE_BUNDLED=OFF -DUSE_BUNDLED_LIBUV=ON -DUSE_BUNDLED_LPEG=ON -DUSE_BUNDLED_LUA=ON -DUSE_BUNDLED_LUV=ON -DUSE_BUNDLED_LUAJIT=OFF -DUSE_BUNDLED_TS=ON -DUSE_BUNDLED_TS_PARSERS=ON -DUSE_BUNDLED_UNIBILIUM=ON -DUSE_BUNDLED_UTF8PROC=ON && \
+    cmake -S cmake.deps -B .deps -G Ninja \
+      -D CMAKE_BUILD_TYPE=RelWithDebInfo \
+      -DUSE_BUNDLED=ON && \
     cmake --build .deps
 
 # Build/Install neovim
 RUN cd /nvim/neovim && \
-    cmake -B build -G Ninja -D CMAKE_BUILD_TYPE=RelWithDebInfo -D CMAKE_INSTALL_PREFIX=/usr && \
+    cmake -B build -G Ninja \
+      -D CMAKE_BUILD_TYPE=RelWithDebInfo \
+      -D CMAKE_INSTALL_PREFIX=/usr && \
     cmake --build build && \
     cmake --install build
 
@@ -96,5 +101,5 @@ RUN git clone --depth 1 --branch 3.17.1 https://github.com/LuaLS/lua-language-se
 
 ENV PATH="/nvim/lua-language-server/bin:$PATH"
 
-# Install basedpyright
-RUN npm install -g basedpyright
+# Install basedpyright + opencode
+RUN npm install -g basedpyright opencode-ai@latest
