@@ -1,11 +1,22 @@
 #!/bin/bash
 
-script_dir=$(dirname $(realpath $0))
+script_dir=$(dirname "$(realpath "$0")")
 
-. $script_dir/nvim_library.sh
+. "$script_dir/nvim_library.sh"
 
-## Solve issue with Curl permissions
-mkdir -p $HOME/.local/share/mkchad/tmp
+mkchad_runtime_dir="$HOME/.local/share/mkchad/tmp"
+mkchad_cache_dir="$HOME/.local/cache"
+msk_npm_global_root="$HOME/.local/share/msk_containers/npm-global"
+opencode_config="$HOME/.config/mkchad/opencode.jsonc"
+
+## Solve issue with Curl permissions and keep runtime caches on mounted storage.
+mkdir -p "$mkchad_runtime_dir" "$mkchad_cache_dir" "$msk_npm_global_root"
 
 # Launch Singularity
-$script_dir/ct_exec.sh "--$TOOL" --env NVIM_APPNAME="mkchad" --env XDG_RUNTIME_DIR=$HOME/.local/share/mkchad/tmp $NVIM_CONT_LOCATION nvim "$@"
+"$script_dir/ct_exec.sh" "--$TOOL" \
+  --env "NVIM_APPNAME=mkchad" \
+  --env "XDG_RUNTIME_DIR=$mkchad_runtime_dir" \
+  --env "XDG_CACHE_HOME=$mkchad_cache_dir" \
+  --env "MSK_NPM_GLOBAL_ROOT=$msk_npm_global_root" \
+  --env "OPENCODE_CONFIG=$opencode_config" \
+  "$NVIM_CONT_LOCATION" nvim "$@"

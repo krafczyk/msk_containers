@@ -1,10 +1,11 @@
 #!/bin/bash
 
 # Check if NVIM_APPNAME is set, and if it is, build a conditional block
-if [ -n ${NVIM_APPNAME} ]; then
-  rm -rf ~/.local/share/${NVIM_APPNAME}
-  rm -rf ~/.local/state/${NVIM_APPNAME}
-  rm -rf ~/.cache/${NVIM_APPNAME}
+if [ -n "${NVIM_APPNAME:-}" ]; then
+  rm -rf "$HOME/.local/share/${NVIM_APPNAME}"
+  rm -rf "$HOME/.local/state/${NVIM_APPNAME}"
+  rm -rf "${XDG_CACHE_HOME:-$HOME/.cache}/${NVIM_APPNAME}"
+  rm -rf "$HOME/.local/cache/${NVIM_APPNAME}"
 else
   echo "NVIM_APPNAME needs to be defined."
 fi
