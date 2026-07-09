@@ -6,17 +6,21 @@ script_dir=$(dirname "$(realpath "$0")")
 
 mkchad_runtime_dir="$HOME/.local/share/mkchad/tmp"
 mkchad_cache_dir="$HOME/.local/cache"
-msk_npm_global_root="$HOME/.local/share/msk_containers/npm-global"
+# The common host-side parent is intentionally architecture-neutral.  Each
+# container selects its own architecture/Node-major subdirectory at runtime.
+msk_npm_global_base="${XDG_DATA_HOME:-$HOME/.local/share}/msk_containers/npm-global"
+msk_npm_container_base="/opt/msk/npm-global"
 opencode_config="$HOME/.config/mkchad/opencode.jsonc"
 
 ## Solve issue with Curl permissions and keep runtime caches on mounted storage.
-mkdir -p "$mkchad_runtime_dir" "$mkchad_cache_dir" "$msk_npm_global_root"
+mkdir -p "$mkchad_runtime_dir" "$mkchad_cache_dir" "$msk_npm_global_base"
 
 # Launch Singularity
 "$script_dir/ct_exec.sh" "--$TOOL" \
   --env "NVIM_APPNAME=mkchad" \
   --env "XDG_RUNTIME_DIR=$mkchad_runtime_dir" \
   --env "XDG_CACHE_HOME=$mkchad_cache_dir" \
-  --env "MSK_NPM_GLOBAL_ROOT=$msk_npm_global_root" \
+  --ct-bind "$msk_npm_global_base:$msk_npm_container_base" \
+  --env "MSK_NPM_GLOBAL_BASE=$msk_npm_container_base" \
   --env "OPENCODE_CONFIG=$opencode_config" \
   "$NVIM_CONT_LOCATION" nvim "$@"

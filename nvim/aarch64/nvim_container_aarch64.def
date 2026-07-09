@@ -4,6 +4,12 @@ From: nvim_container_aarch64.tar
 %environment
     export CC=clang
 
+    if [ -n "${MSK_NPM_GLOBAL_BASE:-}" ]; then
+        export MSK_NPM_GLOBAL_ROOT="${MSK_NPM_GLOBAL_BASE}/${MSK_CONTAINER_ARCH}/${MSK_NODE_GLOBAL_KEY}"
+        export NPM_CONFIG_PREFIX="$MSK_NPM_GLOBAL_ROOT"
+        export PATH="$MSK_NPM_GLOBAL_ROOT/bin:$PATH"
+    fi
+
 %runscript
     # Run Neovim
     nvim "$@"

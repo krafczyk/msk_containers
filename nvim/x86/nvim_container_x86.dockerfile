@@ -32,6 +32,12 @@ RUN pip3 install --prefix /usr \
     openai jedi pynvim python-lsp-server[all]
 
 ENV NODE_VER=22.22.3
+ENV MSK_CONTAINER_ARCH=x86_64
+ENV MSK_NODE_GLOBAL_KEY=node-v22
+
+# A read-only image still needs a stable target for the runtime-owned npm
+# prefix bind mount.
+RUN mkdir -p /opt/msk/npm-global
 
 # Install Node.js and npm
 RUN mkdir -p /nvim && \
@@ -77,7 +83,7 @@ RUN echo "/usr/lib" > /etc/ld.so.conf.d/usr-lib.conf && \
 
 # Clone neovim
 RUN cd /nvim && \
-    git clone --depth 1 --branch v0.12.2 https://github.com/neovim/neovim
+    git clone --depth 1 --branch v0.12.4 https://github.com/neovim/neovim
 
 # Build dependencies
 RUN cd /nvim/neovim && \
@@ -101,5 +107,7 @@ RUN git clone --depth 1 --branch 3.17.1 https://github.com/LuaLS/lua-language-se
 
 ENV PATH="/nvim/lua-language-server/bin:$PATH"
 
-# Install basedpyright + opencode
-RUN npm install -g basedpyright opencode-ai@latest
+# Baseline tools make a fresh MkChad launch work before a user-managed runtime
+# update has been installed.  The latter takes precedence when mounted.
+ARG OPENCODE_VERSION=1.17.0
+RUN npm install -g basedpyright "opencode-ai@${OPENCODE_VERSION}"
