@@ -6,7 +6,7 @@ RUN dnf update -y && \
     dnf install -y wget git gcc gcc-c++ \
     make cmake zsh python3 python3-devel \
     python3-pip python3-virtualenv \
-    rust cargo \
+    rust cargo gh \
     zip unzip tar gettext curl \
     java-21-openjdk-devel \
     java-21-openjdk-jmods \
