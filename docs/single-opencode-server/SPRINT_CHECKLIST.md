@@ -279,42 +279,42 @@ the affected item complete.
 - [ ] Preserve arbitrary OpenCode command forwarding.
 - [ ] Preserve `:Opencode move` and its completions.
 - [ ] Add `:Opencode info` and completion.
-- [ ] Add `:Opencode reload` and completion.
+- [x] Add `:Opencode reload` and completion.
 - [ ] Preserve `:OpenCodeStart`.
 - [ ] Preserve `:OpenCodeStop`.
 - [ ] Preserve `:OpenCodeInfo`.
-- [ ] Add `:OpenCodeReload`.
+- [x] Add `:OpenCodeReload`.
 - [ ] Update command descriptions to distinguish local TUI from shared server.
 - [ ] Ensure plugin mappings invoke the lifecycle hook before TUI operations.
 - [ ] Verify operator mappings remain expression mappings.
 
 ### Scoped Configuration Reload
 
-- [ ] Resolve the absolute current Neovim directory at reload invocation time.
-- [ ] Report inactive without starting OpenCode when no healthy managed server
-      exists.
-- [ ] Require matching managed state before sending the mutating reload request.
-- [ ] Query directory-routed session status before disposal.
-- [ ] Query pending permission and question state before disposal.
-- [ ] Refuse reload while current-directory work or interactive requests are
-      active.
-- [ ] Do not provide a force or bang bypass for the active-work refusal.
-- [ ] Send authenticated `POST /instance/dispose` for the current directory.
-- [ ] Keep Basic Auth credentials out of argv, logs, notifications, and state.
-- [ ] Clear stale opencode.nvim connection and status state after disposal.
-- [ ] Recreate the directory instance through a bounded benign request.
-- [ ] Validate that the recreated `/path` matches the invocation directory.
-- [ ] Reconnect opencode.nvim to the recreated instance.
-- [ ] Recycle only the invoking Neovim's local attached TUI.
-- [ ] Preserve shared server PID, generation, URL, and port across reload.
-- [ ] Leave other directory instances and their attached TUIs usable.
-- [ ] Coalesce repeated reload requests in one Neovim process.
-- [ ] Bound and safely converge concurrent same-directory reloads from separate
-      MkChad processes.
-- [ ] Report the failed phase and directory on dispose, recreation, reconnect,
-      or TUI recreation failure.
-- [ ] Document that scoped reload does not guarantee refreshing process-cached
-      global OpenCode configuration.
+- [x] Resolve the absolute current Neovim directory at reload invocation time.
+- [x] Report inactive without starting OpenCode when no healthy managed server
+       exists.
+- [x] Require matching managed state before sending the mutating reload request.
+- [x] Query directory-routed session status before disposal.
+- [x] Query pending permission and question state before disposal.
+- [x] Refuse reload while current-directory work or interactive requests are
+       active.
+- [x] Do not provide a force or bang bypass for the active-work refusal.
+- [x] Send authenticated `POST /instance/dispose` for the current directory.
+- [x] Keep Basic Auth credentials out of argv, logs, notifications, and state.
+- [x] Clear stale opencode.nvim connection and status state after disposal.
+- [x] Recreate the directory instance through a bounded benign request.
+- [x] Validate that the recreated `/path` matches the invocation directory.
+- [x] Reconnect opencode.nvim to the recreated instance.
+- [x] Recycle only the invoking Neovim's local attached TUI.
+- [x] Preserve shared server PID, generation, URL, and port across reload.
+- [x] Leave other directory instances and their attached TUIs usable.
+- [x] Coalesce repeated reload requests in one Neovim process.
+- [x] Bound and safely converge concurrent same-directory reloads from separate
+       MkChad processes.
+- [x] Report the failed phase and directory on dispose, recreation, reconnect,
+       or TUI recreation failure.
+- [x] Document that scoped reload does not guarantee refreshing process-cached
+       global OpenCode configuration.
 
 ## Workstream I: Live `:OpenCodeInfo`
 
@@ -379,8 +379,8 @@ the affected item complete.
 - [ ] Search for attached TUI commands missing `--dir`.
 - [ ] Search for stale references to upstream `nickjvandyke/opencode.nvim` in
       MkChad plugin configuration.
-- [ ] Verify reload requests route to `/instance/dispose` with the current cwd.
-- [ ] Verify reload code never invokes shared-server stop or startup paths.
+- [x] Verify reload requests route to `/instance/dispose` with the current cwd.
+- [x] Verify reload code never invokes shared-server stop or startup paths.
 - [ ] Review diffs in all repositories.
 - [ ] Confirm unrelated changes were not modified.
 
@@ -559,9 +559,9 @@ the affected item complete.
 - [ ] Document explicit `OPENCODE_PORT` failure behavior.
 - [ ] Document how to obtain the current web URL with `:OpenCodeInfo`.
 - [ ] Document explicit shared-server stop behavior.
-- [ ] Document scoped reload behavior, active-work refusal, and current-directory
-      isolation.
-- [ ] Document that global process-cached config may require shared stop/restart.
+- [x] Document scoped reload behavior, active-work refusal, and current-directory
+       isolation.
+- [x] Document that global process-cached config may require shared stop/restart.
 - [ ] Document local-user exposure when password auth is unset.
 - [ ] Document version mismatch and restart procedure.
 - [ ] Document detached-process runtime limitations.
@@ -596,6 +596,7 @@ the affected item complete.
 | 2026-07-14 | mkchad | Committed `1f93458`. Headless tests used isolated XDG state roots and the installed OpenCode 1.17.18 to verify lazy config load, inactive info with no state, invalid explicit-port rejection, detached first-use start, live health, 0700/0600 state permissions, normal Neovim-exit reuse, and verified shared stop. These are host-process checks, not SingularityCE/Apptainer validation. |
 | 2026-07-14 | repair cycle 1 | Added focused headless regressions for exact `/proc` argv validation (including port-prefix and near-match refusal), a synchronized two-process lock race, delayed-health contender reuse of one generation, SIGKILL local-TUI recreation, explicit-port conflict preservation, authenticated 401 preservation, and a deterministic startup bind-race fixture whose unknown health responder is refused and whose failed child leaves no live orphan. The opencode.nvim curl regression verifies `/proc/<curl-pid>/cmdline` contains neither the Basic-Auth password nor JSON body while the protected stdin config request completes. These remain host-process checks; SingularityCE/Apptainer are unavailable. |
 | 2026-07-14 | sprint scope | Added `:OpenCodeReload` and `:Opencode reload` as current-directory instance reloads. They must refuse active work, preserve the shared server and unrelated directories, reconnect opencode.nvim, recreate the local attached TUI, and avoid claiming to reload process-cached global config. OpenCode 1.17.20 has `/instance/dispose` but no released reload command; upstream PR #9871 and issue #36495 remain relevant. |
+| 2026-07-14 | mkchad | Committed `8197e4d`: added scoped reload commands and an authenticated, directory-routed reload flow. Isolated headless fixtures verified inactive reload creates no state, busy work refuses without disposal, successful reload preflights status/permissions/questions, posts `/instance/dispose`, validates routed `/path`, clears/reconnects plugin state, recreates the local TUI, and preserves PID/generation/URL/port. This is fixture coverage only; OpenCode 1.17.20 and multi-directory runtime verification remain open. |
 
 ## Completion Record
 
