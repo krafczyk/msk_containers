@@ -36,8 +36,9 @@ availability findings.
 - Audits must not recommend evading system administration controls.
 - Audits must preserve laziness: ordinary MkChad startup and status inspection
   must not start OpenCode.
-- Audits must treat live health as liveness truth and persistent state as
-  coordination metadata.
+- Audits must treat pinned HTTPS health as liveness truth only after exact
+  schema-2 proxy/backend identity, listener, CA, and same-connection controls
+  validate; persistent state remains coordination metadata.
 - Audits must account for shared homes, multiple hosts, multiple MkChad
   processes, PID reuse, and port races.
 - Audits must not modify unrelated user changes.
@@ -60,6 +61,11 @@ Examples:
 - Making ordinary MkChad startup consistently unusable across supported hosts.
 - Connecting project commands to an untrusted endpoint while treating it as the
   managed server.
+- Sending credentials, bodies, prompts, or SSE bytes over direct HTTP or before
+  exact established-backend socket proof.
+- Reconnecting an already accepted client stream to a replacement backend.
+- Exposing the CA private key or keytool password through argv, state, logs, or
+  permissions available to other users.
 
 Policy:
 
@@ -152,6 +158,10 @@ Policy:
 - Verify negative or reused PIDs cannot target unrelated processes or groups.
 - Verify stop escalation remains scoped to the managed process.
 - Verify detached process handles and file descriptors are closed safely.
+- Validate proxy and backend independently by PID start time, boot ID, exact
+  executable/argv, role semantics, and owned listener inode.
+- Verify every stop/recovery path stops proxy first and never signals a live
+  unverifiable process.
 
 ### Concurrency
 
@@ -164,12 +174,15 @@ Policy:
 
 ### Liveness And Recovery
 
-- Verify `/global/health` is the authoritative liveness check.
+- Verify CA-pinned HTTPS `/global/health` is authoritative only after complete
+  pair ownership/listener validation.
 - Verify all retries and polls are bounded.
 - Verify server death clears stale connection presentation.
 - Verify next-use recovery after server death.
 - Verify TUI recreation after TUI death or generation change.
 - Verify failure does not make ordinary MkChad startup unusable.
+- Verify proxy-only and backend-only death both replace the complete pair while
+  retaining valid CA/public-port identity.
 
 ### State Integrity
 
@@ -179,14 +192,40 @@ Policy:
 - Verify cleanup is conditional on matching generation.
 - Verify state and logs use restrictive permissions.
 - Verify no secrets are persisted.
+- Verify schema 2 contains both process start identities, boot ID, stable CA
+  path/certificate identity, distinct public/internal ports, versions, and logs.
+- Verify incomplete startup uses private generation-specific pending metadata
+  and cannot be mistaken for complete state.
+- Verify schema 1 is labeled legacy and is never probed or returned as a plugin
+  URL; future state is not overwritten.
 
-### Endpoint And Port Safety
+### TLS, Relay, And Port Safety
 
-- Verify unknown endpoints are not adopted based only on health.
+- Verify public clients authenticate the exact host CA and never disable TLS
+  verification.
+- Verify CA key/store/password permissions and keytool `-storepass:file`; search
+  argv/state/logs/notifications for password content.
+- Verify CA and leaf identity remain stable across ordinary process recovery.
+- Verify unknown endpoints are not adopted based only on health or a listener.
 - Verify explicit port conflicts fail without fallback.
 - Verify automatic fallback is bounded and persisted.
 - Verify auth failures are distinguished from availability failures.
-- Verify the server binds only to loopback.
+- Verify public proxy and internal backend bind only to loopback and use
+  distinct ports.
+- Verify every TLS connection sends only the fixed unauthenticated keep-alive
+  health preflight before proof.
+- Verify bounded parser rejection for malformed, oversized, chunked,
+  transfer-encoded, close-delimited, EOF, and timeout responses.
+- Verify exact reverse ESTABLISHED tuple uniqueness across tcp/tcp6 and socket
+  inode ownership under the immutable expected backend PID.
+- Verify no decrypted client HTTP byte is read/forwarded before proof and the
+  same socket is used for pumping.
+- Verify process/start/boot/inode ownership remains monitored during long-lived
+  HTTP/SSE and ownership loss closes the stream.
+- Verify no code reconnects an accepted client stream.
+- Verify replacement listeners before proof and after backend death receive no
+  Authorization/body/client bytes (at most the fixed preflight before proof).
+- Verify unsupported platform evidence fails closed.
 
 ### Directory Routing
 
@@ -213,6 +252,8 @@ Policy:
   bounded and converge safely.
 - Verify errors identify the reload phase and directory without claiming that
   process-cached global configuration was refreshed.
+- Verify reload curl supplies the state CA through protected stdin and preserves
+  proxy PID, backend PID, generation, both ports, URL, and certificate identity.
 
 ### Laziness And Side Effects
 
@@ -230,6 +271,28 @@ Policy:
 - Verify errors identify URL, port, and log path where safe.
 - Verify credentials and inherited environment values are not printed.
 - Verify server/local version mismatch is reported accurately.
+- Verify info labels schema 1 legacy and sends no request for legacy, malformed,
+  future, missing, certificate-mismatched, or process-invalid state.
+- Verify diagnostics report CA path/certificate identity and proxy/backend
+  layers separately without printing key/password content.
+
+### Client Trust And Secret Transport
+
+- Verify MkChad lifecycle/reload curl supplies `cacert`, auth, and bodies only
+  through protected stdin configuration.
+- Verify opencode.nvim resolves optional `server.ca_cert` for every REST and SSE
+  request and keeps CA, credentials, and bodies out of argv.
+- Verify request-time directory routing remains present with TLS/auth/body.
+- Verify local attach receives `NODE_EXTRA_CA_CERTS` in its child environment,
+  the HTTPS URL, and `--dir`, while preserving inherited auth behavior.
+- Verify curl fails without CA and succeeds with CA.
+- Verify browser documentation requires manual import and does not claim trust
+  automation; browser runtime evidence must name the tested trust store/browser.
+- Verify documentation and diagnostics state that TLS authenticates the server,
+  not clients, and CA possession does not control access.
+- Verify no-password operation warns that public and discoverable internal
+  loopback endpoints are accessible to local users; verify configured Basic Auth
+  returns `401` through both endpoints for invalid credentials.
 
 ### Regression And Compatibility
 
@@ -239,6 +302,10 @@ Policy:
 - Verify x86_64 and aarch64 baseline updates.
 - Verify ppc64le remains untouched.
 - Verify unrelated worktree changes remain untouched.
+- Verify Java source compiles for release 21 and requires no OpenSSL dependency.
+- Verify bounded concurrent TLS clients and concurrent first-use startup.
+- Verify the MkChad pin includes both opencode.nvim CA support and the `e04b7a7`
+  SSE fix before release; a local uncommitted diff is not deployment evidence.
 
 ## Audit Workflow
 
@@ -250,12 +317,14 @@ Policy:
 6. Review behavior across repository boundaries.
 7. Run static checks and focused tests.
 8. Exercise process-kill, race, state-corruption, and port-conflict scenarios.
-9. Report findings ordered by P0, P1, P2, then P3.
-10. Include file/line references and reproduction details.
-11. Remediate P0/P1 findings before lower-priority cleanup.
-12. Re-run affected checks after each remediation.
-13. Perform a final re-audit of the combined diff.
-14. Record unresolved risks and verification gaps.
+9. Exercise TLS trust failure, same-connection proof, replacement listener,
+   long-lived SSE, and preflight-parser rejection scenarios.
+10. Report findings ordered by P0, P1, P2, then P3.
+11. Include file/line references and reproduction details.
+12. Remediate P0/P1 findings before lower-priority cleanup.
+13. Re-run affected checks after each remediation.
+14. Perform a final re-audit of the combined diff.
+15. Record unresolved risks and verification gaps.
 
 ## Finding Format
 
@@ -308,6 +377,39 @@ The inability to defend against root is not itself a P1 exception. The audit
 must distinguish impossible root resistance from fixable unsafe application
 behavior.
 
+### SPOS-AUD-P1-004: Local-User Access Without A Supplied Password
+
+- **Status:** Policy gate accepted for this deployment scope by the
+  decision-maker/user on 2026-07-14. The risk remains unresolved and
+  conditional, was not code-fixed, and remains release-blocking anywhere this
+  exception is not accepted. This is not a closure claim.
+- **Acceptance:** The user explicitly acknowledged that untrusted same-host
+  users can access no-password deployments and accepted that residual for this
+  deployment scope, subject to the documented strong-password-before-first-use
+  or stop/set/restart workaround.
+- **Owner:** Matthew Krafczyk, MkChad maintainer.
+- **Rationale:** The selected contract preserves OpenCode Basic Auth when the
+  user supplies `OPENCODE_SERVER_PASSWORD`, but neither generates nor forces a
+  password. TLS authenticates server identity only. Changing that contract in
+  this repair would require credential generation/distribution and recovery
+  design beyond the approved sprint behavior.
+- **Scoped bound:** Both listeners remain loopback-only, so exposure is limited
+  to users/processes on the same host. This does not make the data exposure
+  acceptable by itself. TLS/CA authenticates server identity and is not client
+  access control; CA possession does not control access.
+- **Operational workaround:** Set a strong existing
+  `OPENCODE_SERVER_PASSWORD` in the MkChad/OpenCode environment before first
+  use. If a pair already runs, set the variable, run `:OpenCodeStop`, and start
+  OpenCode again. Confirm invalid credentials receive `401` from both the public
+  proxy and direct internal endpoint.
+- **Follow-up:** `SPOS-FOLLOWUP-AUTH-001` must design and approve either a
+  mandatory user-supplied credential gate or an equivalent per-user endpoint
+  access control without inventing a password.
+- **Reevaluation trigger:** Reevaluate before deployment on a host with
+  untrusted local users, before either listener becomes non-loopback, when
+  OpenCode authentication semantics change, when a per-user transport becomes
+  available, or when OpenCode v2 architecture is selected.
+
 ## Completion Gate
 
 The audit passes when:
@@ -320,5 +422,12 @@ The audit passes when:
 - No secrets or unrelated changes are present in the final diffs.
 - The implementation still fails safely when one or more process-chain members
   are killed.
+- CA-authenticated TLS, protected client configuration, fixed preflight, exact
+  tuple/inode/PID-start/boot proof, and no-reconnect behavior have repeatable
+  evidence.
+- Release evidence identifies the exact MkChad and opencode.nvim revisions;
+  opencode.nvim CA support must be in the revision pinned by MkChad.
+- Runtime/browser/container items are not marked complete from fixture-only
+  evidence.
 
 The preferred outcome is zero unresolved P0 and P1 findings.
