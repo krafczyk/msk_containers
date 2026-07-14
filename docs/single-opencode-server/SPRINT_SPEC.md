@@ -61,6 +61,8 @@ every request.
 - Give the web endpoint a stable port for the lifetime of host-specific state.
 - Prefer port `4096` when no port is explicitly configured or already persisted.
 - Provide fresh, truthful diagnostics through `:OpenCodeInfo`.
+- Reload one directory's server-side OpenCode configuration without restarting
+  the shared backend through `:OpenCodeReload`.
 - Preserve the existing mounted npm prefix and live OpenCode update behavior.
 - Update supported container baselines to the current OpenCode release.
 
@@ -78,6 +80,9 @@ every request.
 - Do not attempt to prove attached-TUI presence through the OpenCode HTTP API;
   no such presence endpoint exists.
 - Do not solve routing between multiple attached TUIs using the same directory.
+- Do not present a directory-instance reload as a reload of process-cached global
+  OpenCode configuration. Global configuration changes may still require an
+  explicit shared-server stop and restart.
 - Do not modify the ppc64le OpenCode baseline in this sprint.
 - Do not commit or overwrite unrelated worktree changes.
 
@@ -195,6 +200,7 @@ The following operations must not start the server:
 - Loading the opencode.nvim plugin.
 - Running `:checkhealth opencode`.
 - Running `:OpenCodeInfo`.
+- Running `:OpenCodeReload` when no healthy managed server exists.
 - Viewing a statusline component.
 
 The following operations may ensure or start the server:
@@ -562,9 +568,11 @@ Preserve these behaviors:
 | `:Opencode select` | Ensure backend/TUI, then select |
 | `:Opencode move ...` | Move only the local Snacks terminal window |
 | `:Opencode info` | Show live information without starting anything |
+| `:Opencode reload` | Safely reload the current directory's OpenCode instance and local TUI |
 | `:OpenCodeStart` | Alias for explicit ensure/start behavior |
 | `:OpenCodeStop` | Explicit shared-server stop |
 | `:OpenCodeInfo` | Live observational diagnostics |
+| `:OpenCodeReload` | Scoped current-directory configuration reload |
 
 The explicit stop command affects every MkChad and web client using that shared
 backend. Its description and notification must say "shared server".
@@ -584,6 +592,61 @@ Stopping must:
 9. Close the current Neovim's attached TUI.
 
 Do not stop the server on Neovim exit.
+
+### Scoped Configuration Reload
+
+`:OpenCodeReload` and `:Opencode reload` reload only the server-side
+OpenCode instance routed to the current absolute Neovim directory. They must not
+stop, replace, or change the PID, generation, URL, or port of the healthy shared
+`opencode serve` process. Other directory instances and their attached TUIs must
+remain usable.
+
+The command exists for project-scoped `opencode.json`/`opencode.jsonc`, agents,
+commands, skills, plugins, MCP configuration, and other state initialized with an
+OpenCode directory instance. Existing `AGENTS.md` contents are already read for
+new model work by OpenCode and do not require this command. OpenCode 1.17.20
+caches portions of global configuration for the server-process lifetime, so the
+command must state that it does not guarantee reloading
+`~/.config/opencode/opencode.json` or
+`~/.config/opencode/opencode.jsonc`; use
+`:OpenCodeStop` followed by the next OpenCode operation when a full process
+reload is required.
+
+OpenCode 1.17.20 exposes `POST /instance/dispose` but has no released reload
+command. Upstream reload work remains open in `anomalyco/opencode` PR #9871,
+and issue #36495 documents that instance disposal closes the directory-scoped
+`/event` stream. Treat this implementation as a version-specific compatibility
+layer and revisit it when upstream ships a stable reload API.
+
+Reloading must:
+
+1. Resolve the current absolute Neovim directory at invocation time.
+2. Probe the managed endpoint and report an inactive result without starting a
+   server when no healthy managed backend exists.
+3. Verify that the healthy endpoint matches managed state before sending a
+   mutating request.
+4. Query the directory-routed `/session/status`, pending permission, and pending
+   question APIs. Refuse reload while any current-directory operation or
+   interactive request is active; do not add a force/bang bypass in this sprint.
+5. Send an authenticated, directory-routed `POST /instance/dispose` without
+   exposing credentials in process arguments, logs, notifications, or state.
+6. Treat the expected directory-scoped SSE disconnect as a reload transition,
+   clear stale opencode.nvim connection/status state, and reconnect rather than
+   replacing the shared backend.
+7. Recreate the directory instance with a bounded benign request such as
+   `GET /path`, and require its routed path to equal the invocation directory.
+8. Close and recreate the invoking Neovim's local `opencode attach` process so
+   client-side TUI configuration and server inventories are refreshed.
+9. Wait only for the existing bounded TUI bootstrap interval; do not claim the
+   OpenCode API proves attached-TUI readiness.
+10. Report success only after instance recreation, routed-path validation,
+    opencode.nvim reconnection, and local TUI process recreation complete.
+
+Repeated reload requests in one Neovim process must coalesce. Concurrent reloads
+from separate MkChad processes for the same directory must converge on one usable
+recreated instance or return a bounded actionable error; they must not stop the
+shared server or leave all clients permanently disconnected. A reload for one
+directory must not dispose a different directory instance.
 
 ## `:OpenCodeInfo` Requirements
 
@@ -686,6 +749,10 @@ OpenCode operation to launch the updated executable.
 | TUI survives server replacement | Recycle it on generation mismatch |
 | TUI attach fails | Keep healthy backend; report local attach failure |
 | Neovim cwd changes | Reattach local TUI for new directory |
+| Reload requested while work or an interactive prompt is active | Refuse without disposing the instance |
+| Reload requested with no healthy managed server | Report inactive without starting a server |
+| Instance dispose or recreation fails | Keep the shared backend running; report the directory and failed phase |
+| Instance reload closes directory SSE | Clear stale state and reconnect with bounded retry |
 | Local OpenCode updated | Keep healthy server; report mismatch in info |
 | Unknown healthy OpenCode on port | Do not adopt without matching state |
 
@@ -702,6 +769,9 @@ OpenCode operation to launch the updated executable.
   TUI commands.
 - Server mounts are inherited from the MkChad container that creates it. Mounts
   introduced later require server replacement.
+- `:OpenCodeReload` does not guarantee reloading process-cached global OpenCode
+  configuration and cannot preserve an active in-memory operation, so it refuses
+  reload while directory work or an interactive request is active.
 - Local users can reach an unauthenticated loopback server on shared machines.
 
 ## Compatibility Requirements
@@ -714,7 +784,7 @@ OpenCode operation to launch the updated executable.
 - Preserve `OPENCODE_SERVER_USERNAME` and `OPENCODE_SERVER_PASSWORD` behavior.
 - Preserve terminal positions: bottom, top, left, right, float, and default.
 - Preserve existing OpenCode mappings and command names unless specifically
-  extended with `info`.
+  extended with `info` and `reload`.
 - Preserve architecture-specific mounted npm prefix selection.
 
 ## Implementation Sequence
@@ -746,6 +816,9 @@ OpenCode operation to launch the updated executable.
 4. Track local TUI URL, directory, and generation.
 5. Recycle TUI on backend generation or cwd changes.
 6. Preserve existing terminal layout and toggling.
+7. Add scoped `:OpenCodeReload` and `:Opencode reload` handling.
+8. Refuse active-instance reloads, dispose/recreate only the current directory
+   instance, reconnect opencode.nvim, and recycle the local attached TUI.
 
 ### Phase 4: Diagnostics
 
@@ -769,7 +842,7 @@ OpenCode operation to launch the updated executable.
 5. Verify killed-process recovery.
 6. Verify web access and directory routing.
 7. Verify explicit and automatic port conflict behavior.
-8. Verify diagnostics and explicit stop.
+8. Verify diagnostics, scoped reload, and explicit stop.
 
 ## Acceptance Criteria
 
@@ -825,6 +898,18 @@ OpenCode operation to launch the updated executable.
 - It never signals an unrelated reused PID.
 - Neovim exit does not invoke shared-server stop.
 
+### Scoped Configuration Reload
+
+- `:OpenCodeReload` does not start an inactive server.
+- Reload refuses while current-directory work, permission prompts, or questions
+  are active.
+- Reload applies changed project-scoped configuration to subsequent operations.
+- The shared server PID, generation, URL, and port remain unchanged.
+- Other directory instances remain connected and usable.
+- opencode.nvim reconnects and the invoking Neovim receives a newly created
+  directory-correct attached TUI.
+- Reload never claims that process-cached global configuration was refreshed.
+
 ### Version Baseline
 
 - x86_64 and aarch64 Dockerfiles use `opencode-ai@1.17.20`.
@@ -848,6 +933,11 @@ OpenCode operation to launch the updated executable.
 | Occupy explicit override | Clear failure; no fallback |
 | Set wrong password | Unauthorized diagnostic; no credential disclosure |
 | Update local OpenCode while server runs | Info reports version mismatch |
+| Reload with no running server | Inactive result; no process or state is created |
+| Reload while a session or prompt is active | Clear refusal; instance and clients remain intact |
+| Change project config, then reload | Current directory instance uses the new config without a server PID/generation change |
+| Reload project A while project B is connected | Project A reconnects; project B and the shared backend remain usable |
+| Invoke same-directory reload concurrently | One usable instance remains; both commands finish or fail within bounds |
 | Stop shared server | Verified process stops; state clears |
 | Use web UI | Stable persisted URL serves web application |
 
@@ -871,9 +961,11 @@ If shared-server behavior is unreliable:
 1. Restore the upstream opencode.nvim plugin source and released version.
 2. Restore the prior per-Neovim random-port implementation in MkChad.
 3. Restore the `ExitPre` cleanup only for the per-Neovim server model.
-4. Stop any verified detached managed server through the new stop command or
+4. Remove the scoped reload commands if instance disposal or client refresh is
+   unreliable; this does not require reverting shared-server lifecycle state.
+5. Stop any verified detached managed server through the new stop command or
    validated PID state.
-5. Preserve server logs and failed state metadata for diagnosis.
+6. Preserve server logs and failed state metadata for diagnosis.
 
 Container baseline updates are independent and do not need rollback unless the
 new package fails the supported architecture build.
@@ -886,6 +978,8 @@ new package fails the supported architecture build.
 - Propose the pre-operation ensure hook upstream if it proves generally useful.
 - Add an upstream TUI registration/readiness endpoint if reliable publish
   acknowledgement becomes necessary.
+- Replace the scoped reload workaround when upstream ships a stable reload API
+  that covers project and global configuration without unsafe instance disposal.
 - Consider generated Basic Auth credentials for shared hosts in a separate
   security sprint.
 - Consider instance or systemd supervision only if best-effort detached

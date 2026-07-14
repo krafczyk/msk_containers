@@ -89,6 +89,8 @@ Examples:
   detachment was implemented incorrectly.
 - A failed lifecycle hook preventing all future plugin actions without a bounded
   recovery path.
+- A scoped configuration reload disposing the wrong directory, interrupting an
+  active operation, or permanently disconnecting current-directory clients.
 
 Policy:
 
@@ -194,6 +196,23 @@ Policy:
 - Verify distinct project directories do not receive each other's TUI commands.
 - Record the same-directory multi-TUI limitation rather than presenting it as
   solved.
+
+### Scoped Configuration Reload
+
+- Verify `:OpenCodeReload` and `:Opencode reload` target only the absolute current
+  Neovim directory.
+- Verify inactive reload starts no server and creates no lifecycle state.
+- Verify reload refuses while session work, permission requests, or questions
+  are active, with no force/bang bypass.
+- Verify the dispose request authenticates without credential exposure.
+- Verify instance recreation validates routed `/path` before success.
+- Verify the shared server PID, generation, URL, and port do not change.
+- Verify another directory instance remains usable throughout reload.
+- Verify opencode.nvim reconnects and only the invoking local TUI is recycled.
+- Verify same-process duplicate and cross-process concurrent reload requests are
+  bounded and converge safely.
+- Verify errors identify the reload phase and directory without claiming that
+  process-cached global configuration was refreshed.
 
 ### Laziness And Side Effects
 

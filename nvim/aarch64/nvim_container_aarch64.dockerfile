@@ -7,7 +7,7 @@ RUN dnf update -y && \
     make cmake zsh python3 python3-devel \
     python3-pip python3-virtualenv \
     rust cargo \
-    zip unzip tar gettext curl \
+    zip unzip tar gettext curl jq \
     java-21-openjdk-devel \
     java-21-openjdk-jmods \
     maven xsel which ripgrep \

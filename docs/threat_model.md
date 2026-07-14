@@ -75,6 +75,8 @@ continue or a new MkChad process can start.
 - Stable discovery of the managed server URL.
 - Correct coordination between concurrent MkChad processes.
 - Ability to inspect live status without causing lifecycle changes.
+- Ability to reload one directory instance without disrupting the shared server
+  or unrelated directory clients.
 
 ### Integrity Assets
 
@@ -82,6 +84,7 @@ continue or a new MkChad process can start.
 - Correct server generation and PID tracking.
 - Correct current-host state selection.
 - Correct project-directory routing.
+- Correct current-directory scoping for instance disposal and recreation.
 - Correct startup-lock ownership.
 - Assurance that stop and cleanup operations do not signal unrelated processes.
 
@@ -122,6 +125,8 @@ continue or a new MkChad process can start.
 - Malformed or missing state does not crash Neovim.
 - Repeated process death does not create an unbounded restart loop.
 - Diagnostic commands are observational and do not start processes.
+- Scoped reload refuses to dispose an instance with active work or interactive
+  requests and never starts an inactive shared server.
 - Errors clearly identify which process layer is unavailable.
 - Secrets are not written into lifecycle state or displayed in diagnostics.
 
@@ -129,6 +134,8 @@ continue or a new MkChad process can start.
 
 - The detached server survives the Neovim process that launched it.
 - Attached TUIs reconnect or are recreated after server replacement.
+- opencode.nvim and the invoking attached TUI refresh after a scoped directory
+  instance reload while unrelated directory clients remain connected.
 - The same persistent port is reused after selective process termination.
 - Server logs survive process termination and aid diagnosis.
 - A new MkChad process can recover when all previous MkChad processes were
@@ -438,6 +445,49 @@ Residual risk:
 The selected policy does not generate a password automatically. Other local
 users may reach an unauthenticated loopback server, and root can read everything.
 
+### T13: Unsafe Or Misrouted Instance Reload
+
+Threat:
+
+A scoped reload disposes the wrong directory instance, interrupts active model
+or tool work, destroys a pending permission/question continuation, leaks Basic
+Auth credentials, or restarts the shared backend instead of refreshing one
+instance.
+
+Impact:
+
+- In-flight work or interactive requests may be lost.
+- Another project's agents, tools, MCP servers, or attached TUI may be disrupted.
+- The user may believe changed global configuration was applied when it remains
+  cached by the long-running server process.
+- A directory-scoped SSE disconnect may leave opencode.nvim permanently stale.
+
+Controls:
+
+- Resolve and route the absolute current Neovim directory at invocation time.
+- Require a healthy endpoint that matches managed state before disposal.
+- Query directory-routed session status, permissions, and questions, and refuse
+  reload while work or an interactive request is active.
+- Do not provide a force/bang override in this sprint.
+- Authenticate `POST /instance/dispose` without putting credentials in argv,
+  logs, notifications, or state.
+- Recreate and validate the same directory through `/path` before reporting
+  success.
+- Treat the expected instance-dispose event as a bounded reconnect transition,
+  then refresh opencode.nvim and only the invoking Neovim's attached TUI.
+- Verify shared server PID, generation, URL, and port remain unchanged and that
+  another directory stays usable.
+- State explicitly that directory reload does not guarantee refreshing
+  process-cached global configuration.
+
+Residual risk:
+
+OpenCode does not provide a single atomic "idle and dispose" transaction, so
+work can begin after the preflight checks and before disposal. The implementation
+must keep this interval short, handle conflict/failure without restarting the
+shared backend, and document that a full process restart remains necessary for
+some global configuration. OpenCode also cannot prove attached-TUI readiness.
+
 ## Process-Kill Test Matrix
 
 | Test | Processes killed | Expected outcome |
@@ -466,6 +516,8 @@ Audits should prioritize:
 - Cross-host state or PID confusion on shared home directories.
 - Races that create multiple managed servers.
 - Directory-routing failures that send commands to the wrong project TUI.
+- Scoped reloads that interrupt active work, dispose the wrong directory, expose
+  credentials, restart the shared backend, or strand clients after SSE closure.
 - Changes that make MkChad startup depend on OpenCode availability.
 
 Severity and remediation expectations are defined in `docs/audit_policy.md`.
