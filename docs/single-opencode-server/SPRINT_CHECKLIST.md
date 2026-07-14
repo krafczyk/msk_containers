@@ -532,6 +532,8 @@ the affected item complete.
 | 2026-07-14 | mkchad | Started at `61c46cf`; unrelated untracked `lazy-lock.json` preserved and not modified. |
 | 2026-07-14 | opencode.nvim | Started at upstream-compatible `8cb752f`; fork work is on `builder/single-opencode-server`. |
 | 2026-07-14 | environment | `singularity`, `apptainer`, `docker`, `podman`, `stylua`, and `hadolint` are unavailable. Container build/install and runtime validation remain open. |
+| 2026-07-14 | opencode.nvim | Pushed `ab5eefe` to `origin/builder/single-opencode-server`; MkChad pins that available revision. Headless tests verified directory headers on `/path`, `/event`, and `/tui/publish`, ensure success/exception handling, and status clearing. LuaLS could not initialize its bundled read-only metadata path; StyLua is unavailable. |
+| 2026-07-14 | mkchad | Committed `1f93458`. Headless tests used isolated XDG state roots and the installed OpenCode 1.17.18 to verify lazy config load, inactive info with no state, invalid explicit-port rejection, detached first-use start, live health, 0700/0600 state permissions, normal Neovim-exit reuse, and verified shared stop. These are host-process checks, not SingularityCE/Apptainer validation. |
 
 ## Completion Record
 
