@@ -98,5 +98,5 @@ ENV PATH="/nvim/lua-language-server/bin:$PATH"
 
 # Baseline tools make a fresh MkChad launch work before a user-managed runtime
 # update has been installed.  The latter takes precedence when mounted.
-ARG OPENCODE_VERSION=1.17.18
+ARG OPENCODE_VERSION=1.17.20
 RUN npm install -g basedpyright "opencode-ai@${OPENCODE_VERSION}"

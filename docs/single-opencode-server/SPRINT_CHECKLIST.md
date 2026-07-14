@@ -26,15 +26,15 @@ the affected item complete.
 
 ## Preparation
 
-- [ ] Confirm working trees and record unrelated changes in `msk_containers`.
-- [ ] Confirm working tree and unrelated changes in `/home/matthew/.config/mkchad`.
-- [ ] Note that `/home/matthew/.config/mkchad/lazy-lock.json` is currently
+- [x] Confirm working trees and record unrelated changes in `msk_containers`.
+- [x] Confirm working tree and unrelated changes in `/home/matthew/.config/mkchad`.
+- [x] Note that `/home/matthew/.config/mkchad/lazy-lock.json` is currently
       untracked and must not be changed unless explicitly included later.
 - [x] Locate the fork checkout at `/data1/matthew/Projects/opencode.nvim`.
-- [ ] Confirm the fork starts from current upstream-compatible main.
-- [ ] Create focused implementation branches in each repository as appropriate.
-- [ ] Record the starting commit for each repository in the sprint notes.
-- [ ] Confirm `opencode-ai@1.17.20` remains the current intended baseline.
+- [x] Confirm the fork starts from current upstream-compatible main.
+- [x] Create focused implementation branches in each repository as appropriate.
+- [x] Record the starting commit for each repository in the sprint notes.
+- [x] Confirm `opencode-ai@1.17.20` remains the current intended baseline.
 
 ## Workstream A: opencode.nvim Fork
 
@@ -326,10 +326,10 @@ the affected item complete.
 
 ## Workstream K: Container Baseline
 
-- [ ] Change x86_64 `OPENCODE_VERSION` from `1.17.0` to `1.17.20`.
-- [ ] Change aarch64 `OPENCODE_VERSION` from `1.17.18` to `1.17.20`.
-- [ ] Leave ppc64le unchanged.
-- [ ] Preserve the mounted npm prefix override.
+- [x] Change x86_64 `OPENCODE_VERSION` from `1.17.0` to `1.17.20`.
+- [x] Change aarch64 `OPENCODE_VERSION` from `1.17.18` to `1.17.20`.
+- [x] Leave ppc64le unchanged.
+- [x] Preserve the mounted npm prefix override.
 - [ ] Verify x86_64 package installation.
 - [ ] Verify aarch64 package installation.
 - [ ] Verify `opencode --version` reports `1.17.20` without an override.
@@ -528,7 +528,10 @@ the affected item complete.
 
 | Date | Repository | Note / Deviation / Evidence |
 | --- | --- | --- |
-|  |  |  |
+| 2026-07-14 | msk_containers | Started at `797e038`; unrelated untracked `nvim/x86/jdt-language-server-1.56.0-202601291528.tar.gz` preserved. `npm view opencode-ai@1.17.20 version --json` returned `"1.17.20"`. |
+| 2026-07-14 | mkchad | Started at `61c46cf`; unrelated untracked `lazy-lock.json` preserved and not modified. |
+| 2026-07-14 | opencode.nvim | Started at upstream-compatible `8cb752f`; fork work is on `builder/single-opencode-server`. |
+| 2026-07-14 | environment | `singularity`, `apptainer`, `docker`, `podman`, `stylua`, and `hadolint` are unavailable. Container build/install and runtime validation remain open. |
 
 ## Completion Record
 
