@@ -1,0 +1,40 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": ["AGENTS.md"],
+  "references": {
+    "mkchad": {
+      "path": "~/.config/mkchad",
+      "description": "MkChad configuration repository for the shared OpenCode server sprint"
+    },
+    "opencode-nvim": {
+      "path": "/data1/matthew/Projects/opencode.nvim",
+      "description": "Custom opencode.nvim fork used by MkChad"
+    }
+  },
+  "permission": {
+    "external_directory": {
+      "*": "deny",
+      "~/.config/mkchad": "allow",
+      "~/.config/mkchad/**": "allow",
+      "/data1/matthew/Projects/opencode.nvim": "allow",
+      "/data1/matthew/Projects/opencode.nvim/**": "allow",
+      "/tmp/opencode": "allow",
+      "/tmp/opencode/**": "allow",
+      "~/.local/share/msk_containers/npm-global": "allow",
+      "~/.local/share/msk_containers/npm-global/**": "allow",
+      "~/.local/state/mkchad/opencode": "allow",
+      "~/.local/state/mkchad/opencode/**": "allow",
+      "~/.local/share/mkchad/tmp": "allow",
+      "~/.local/share/mkchad/tmp/**": "allow",
+      "~/.local/cache/mkchad": "allow",
+      "~/.local/cache/mkchad/**": "allow",
+      "~/.local/share/mkchad/lazy/opencode.nvim": "allow",
+      "~/.local/share/mkchad/lazy/opencode.nvim/**": "allow",
+      "~/.local/bin/mkchad": "allow",
+      "~/.local/bin/nvim_library.sh": "allow",
+      "~/.local/bin/ct_*.sh": "allow",
+      "~/containers/neovim*.sif": "allow",
+      "~/.config/ct_mount.conf": "allow"
+    }
+  }
+}
