@@ -285,6 +285,8 @@ The initial schema should contain at least:
   "cwd": "/home/user",
   "log": "/home/user/.local/state/mkchad/opencode/headnode.example/server.log",
   "executable": "/resolved/path/to/opencode",
+  "process_executable": "/resolved/runtime/executable",
+  "argv": ["/resolved/runtime/executable", "serve", "--hostname", "127.0.0.1", "--port", "4096"],
   "local_version": "1.17.20"
 }
 ```
