@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Implemented locally; runtime/container/browser evidence remains gated below |
+| Status | Pass-10 bounded-subprocess repair implemented locally; independent audit and runtime/container/browser evidence remain gated below |
 | Scope | `msk_containers`, MkChad configuration, and `krafczyk/opencode.nvim` |
 | Primary platform | SingularityCE and Apptainer with host network and PID visibility |
 | OpenCode baseline | `opencode-ai@1.17.20` on x86_64 and aarch64 |
@@ -52,7 +52,8 @@ on the next operation. Neovim exit does not stop the pair.
   routing, scoped reload, status clearing, terminal behavior, and Basic Auth.
 - Preserve the lock-lease repair at MkChad `cdf5499` and the initial SSE bound at
   opencode.nvim `e04b7a7`.
-- Migrate deployed schema-1 state without sending credentials to its HTTP URL.
+- Migrate dead deployed schema-1 state without sending credentials to its HTTP
+  URL. Preserve live schema-1 state for trusted manual process accounting.
 
 ## Non-Goals
 
@@ -94,6 +95,12 @@ Under the host state root, `tls/` contains:
 | `server.p12` | `127.0.0.1` leaf key and CA chain loaded by Java | `0600` |
 | `server.pem` | Generated leaf certificate evidence | `0600` |
 | `store.password` | Random keytool/PKCS12 password | `0600` |
+
+The host state root also contains the persistent mode-`0600`
+`lifecycle.fence`. Every lifecycle actor opens it and the Neovim process holds a
+Linux `flock(2)` exclusive lock across logical-lock validation and every shared
+side effect. The file contains no secret, is never unlinked during normal
+operation, and remains inside the mode-`0700` host root.
 
 The state root and `tls/` are `0700`. Generation uses Java `keytool`, EC keys,
 PKCS12 stores, and `-storepass:file`. The random password value never appears in
@@ -233,12 +240,22 @@ non-secret protected-file paths so exact process identity can be checked.
 
 `pending.json` is mode `0600` transient crash-recovery metadata. It records only
 the exact identities of a generation launched before final state publication.
-A later lock owner stops only verified pending processes, proxy first, before
-starting another pair.
+Every write and unlink is generation-conditional and occurs while the kernel
+fence remains held. Cleanup renews the diagnostic logical lease under that same
+fence, freshly re-reads and validates the metadata, signals only identities from
+that re-read generation, and removes the file only if its generation still
+equals the caller's target. Caller-supplied process fields are never signal
+authority. A suspended former owner retains the kernel fence, so no contender
+can reclaim or publish a newer generation; owner death releases the fence in
+the kernel before a contender may reclaim.
 
 Missing state is inactive. Malformed state is never executed or probed and may
 be replaced only under lock. Future schemas are not overwritten. Diagnostics
-label schema 1 as legacy and never probe its HTTP URL.
+label schema 1 as legacy and never probe its HTTP URL. Because schema 1 lacks a
+persisted boot ID, PID start time, and immutable executable identity, a live
+schema-1 PID is never signaled or adopted, even when its current path and argv
+match. Its state is preserved with trusted manual-accounting guidance. Only an
+already-dead schema-1 PID permits automatic matching-state removal or migration.
 
 Runtime process ownership uses the immutable device/inode of
 `/proc/<pid>/exe`; readlink text is diagnostic and may end in ` (deleted)` after
@@ -261,9 +278,33 @@ pending metadata is removed.
 
 ## Startup And Port Policy
 
-The renewable lock from `cdf5499` remains authoritative. Acquisition,
-monotonic boot-scoped leases, renewal, stale reclaim, inode-bound ownership, and
-release are bounded.
+The renewable metadata lock from `cdf5499` remains for diagnostics,
+boot-scoped dead-owner policy, renewal evidence, and inode-bound ownership. A
+persistent Linux kernel `flock(2)` fence is authoritative for exclusion.
+Acquisition is nonblocking and asynchronously polled under a bounded deadline.
+Logical lock creation, publication, renewal, stale reclaim, and release all
+occur while the Neovim process holds the fence fd. A lease deadline never lets
+a contender pass a live or suspended fence holder; process death closes the fd
+in the kernel and permits bounded reclaim. Nested fence acquisition is refused.
+
+Every wait-for-result subprocess reachable while the lifecycle fence may be
+held uses one libuv abstraction. Commands are argv arrays and never shell text;
+protected input is written through a pipe. Stdout and stderr are independently
+limited to 64 KiB and exceeding either limit fails closed. Each utility child is
+limited to five seconds and the remaining 30-second lifecycle deadline, then
+receives SIGTERM followed after at most 250 ms by SIGKILL. Completion occurs
+exactly once only after the child exit callback reaps it; all pipes, process
+handles, and timers are closed on success, nonzero exit, output overflow,
+timeout, start failure, callback failure, and Neovim shutdown. Callback failure
+or shutdown releases the fence. The detached backend/proxy and attached TUI are
+long-lived managed roles rather than wait-for-result utilities;
+the TUI and opencode.nvim reconnection run outside the reload fence followed by
+a newly fenced final generation comparison.
+
+This contract covers OpenCode version discovery, keytool generation/export/
+request/sign/import/list operations, Java keystore validation, lifecycle curl,
+and the pidfd helper. Keytool continues to receive only `-storepass:file`; no
+secret content, full inherited environment, or full command is logged.
 
 The lock winner:
 
@@ -272,8 +313,8 @@ The lock winner:
    identity, and pinned HTTPS health.
 2. Returns a healthy matching pair without rotation.
 3. Stops a failed pair proxy first, then the verified backend.
-4. Stops only a verified schema-1 process without HTTP probing, removes matching
-   legacy state, and continues migration.
+4. Removes matching schema-1 state and continues migration only when its PID is
+   already dead. A live legacy PID fails safely without probing or signaling.
 5. Cleans verified interrupted `pending.json` processes.
 6. Ensures stable certificate material.
 7. Selects the public port: exact `OPENCODE_PORT`, persisted automatic port,
@@ -283,7 +324,9 @@ The lock winner:
 10. Launches the Java proxy with immutable backend PID/start/boot/port and proves
     exact identity/listener.
 11. Requires pinned authenticated HTTPS `/global/health` through the proxy.
-12. Atomically publishes complete schema-2 state and removes pending metadata.
+12. Under one continuously held kernel fence, renews/revalidates logical
+    ownership, atomically publishes complete schema-2 state, and removes only
+    the freshly re-read matching pending generation.
 
 Every failure cleanup is generation and process-identity specific. Retries are
 bounded. Automatic mode may retry a bind race with excluded failed candidates;
@@ -292,10 +335,17 @@ the winner and never launch another pair while its renewable lease is valid.
 
 ## Stop And Recovery
 
-Explicit stop acquires the lifecycle lock, re-reads state, and signals only
-exact verified identities. It stops the proxy first, then the backend, bounds
-SIGTERM/SIGKILL waits, removes only matching generation state, and closes the
-invoking Neovim's TUI. It never probes legacy HTTP state.
+Explicit stop acquires the kernel fence and logical lifecycle lock, re-reads
+state, and signals only exact verified schema-2 identities. A bounded
+stdin-driven Python helper opens a Linux pidfd before its final boot/start/
+runtime-inode/argv and interpreted-launch/Java-source identity validation, then
+dispatches SIGTERM or SIGKILL through that pidfd. PID-number dispatch is not
+used for managed processes. The fence remains held throughout authorization and
+dispatch. Stop preserves exact proxy-first/backend ordering, bounds helper and
+exit waits, removes only matching generation state, and closes the invoking
+Neovim's TUI. It never probes legacy HTTP state. For schema 1 it removes matching
+state only if the PID is already dead; a live PID and its state are preserved
+for trusted manual accounting.
 
 If either process dies, identity/listener/certificate validation or pinned
 health fails, the next OpenCode operation replaces both under lock. The public
@@ -353,6 +403,18 @@ state and starts no process.
 - Automatic/explicit public conflicts, internal races, legacy migration/stop,
   malformed/future state, auth `401`, reload, laziness, and renewable lease
   paths are bounded and tested.
+- Live exact-argv schema-1 migration/stop refuses all signaling and HTTP, while
+  dead legacy state can migrate under lock.
+- Pending/state writes and removals, logical reclaim, and signal dispatch are
+  fenced across final validation and action. A suspended holder blocks expiry/
+  reclaim and mutation; owner death/release permits a contender to proceed.
+- Pending cleanup signals only freshly re-read matching-generation identities,
+  and pidfd mismatch/PID-surrogate validation sends no signal.
+- Every utility subprocess under the lifecycle fence is argv-only, output-
+  bounded, externally deadline-controlled, TERM/KILL escalated, reaped, and
+  handle-clean; timeout, start/nonzero/parse failure, callback exception, and
+  shutdown release the fence without partial state, pending, or certificate
+  publication.
 - Installed `opencode attach` honors `NODE_EXTRA_CA_CERTS`; local 1.17.18
   evidence is acceptable while the 1.17.20 runtime check remains recorded.
 - Existing opencode.nvim curl/SSE and MkChad focused tests pass.
@@ -373,6 +435,15 @@ state and starts no process.
   must not be marked passed without execution.
 - Recovery is next-use, not continuous; in-memory work can be lost.
 - OpenCode has no attached-TUI readiness API.
+- Lifecycle mutation and managed signaling require Linux procfs, working
+  `flock(2)`, pidfds, and Python 3 with `os.pidfd_open` and
+  `signal.pidfd_send_signal`. Missing or differing evidence, unsupported pidfds,
+  fence timeout, or helper timeout fails closed without shared mutation or a
+  PID-number signal. No helper runs continuously.
+- A live schema-1 process blocks automatic migration and explicit stop. The user
+  must use trusted operating-system process accounting to verify and terminate
+  it manually, then retry after the PID is dead; matching current path/argv is
+  intentionally insufficient proof.
 
 ## Rollback
 

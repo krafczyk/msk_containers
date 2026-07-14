@@ -63,6 +63,8 @@ process death while Linux procfs and user file permissions remain trustworthy.
 
 - Linux exposes readable `/proc/<pid>/stat`, `/proc/<pid>/fd`,
   `/proc/net/tcp{,6}`, and boot ID for the intended user's processes.
+- Linux provides working advisory `flock(2)` and pidfds; Python 3 provides
+  `os.pidfd_open` and `signal.pidfd_send_signal` in every target image.
 - Other unprivileged users cannot modify mode-`0700` state directories or read
   mode-`0600` state, logs, password, or keystores.
 - Java 21/keytool, curl, OpenCode, and the selected executables are trusted.
@@ -86,13 +88,25 @@ process death while Linux procfs and user file permissions remain trustworthy.
   inode before reuse or signal. For interpreted launches, also require the
   current launch-path inode; independently require the current Java proxy source
   inode.
+- Never signal a live schema-1 PID: that format lacks the persisted boot/start/
+  immutable-executable evidence required to distinguish PID reuse. Preserve its
+  state for trusted manual accounting and remove it automatically only when the
+  PID is dead.
 - On every TLS connection, prove the exact reverse ESTABLISHED tuple and inode
   under the immutable expected backend PID before client reads/forwarding.
 - Stop proxy first, then backend; replace both if either identity/health fails.
+- Hold the process-owned kernel fence across logical-lock validation and every
+  shared mutation or signal authorization/dispatch. Lease expiry is diagnostic
+  and cannot bypass a live or suspended fence holder.
+- Open a pidfd before final managed-process identity validation and signal only
+  through that pidfd; unsupported/mismatched evidence fails closed.
 - Never send credentials to legacy HTTP, malformed/future state, unknown public
   listeners, or an unproved backend connection.
 - Bound all locks, TLS handshakes, preflights, parsing, retries, connection
   handlers, pumps, process stops, and recovery attempts.
+- Run every wait-for-result lifecycle utility through one argv-only async
+  subprocess boundary with protected stdin, bounded output, an event-loop
+  deadline, TERM/KILL escalation, reaping, and exactly-once cleanup.
 
 ## Threats And Controls
 
@@ -245,12 +259,14 @@ Controls:
 
 - Schema 1 is labeled legacy and never probed.
 - The plugin URL/CA resolvers expose only schema 2.
-- Under lock, migration or explicit stop signals only an exact verified legacy
-  executable/argv/PID.
-- Dead verified legacy state may be removed without network access.
+- Migration and explicit stop never signal a live schema-1 PID, even if current
+  executable path and argv match the record.
+- Matching legacy state may be removed under lock only when its PID is dead.
+- Live legacy state is preserved with guidance to use trusted operating-system
+  process accounting, terminate the verified process manually, and retry.
 
-Residual risk: an unverifiable live legacy process is left running rather than
-risk signaling an unrelated PID; manual intervention may be required.
+Operational limitation: every live legacy process is intentionally left running
+rather than risk signaling a reused PID; manual intervention is required.
 
 ### T9: Selective Proxy Or Backend Death
 
@@ -283,7 +299,9 @@ Controls:
 - Keep native `/proc/<pid>/exe` device/inode authoritative across an on-disk
   replacement, including a ` (deleted)` readlink; refuse to signal a live
   interpreted/source process after its current recorded path is replaced.
-- Signal only after renewing and revalidating lifecycle lock ownership.
+- Signal only while the kernel fence is held, after renewing logical ownership,
+  opening a pidfd, and revalidating boot/start/runtime inode/argv plus required
+  launch/source identities. Dispatch only through that pidfd.
 - Prefer leaking an unverifiable process over signaling an unrelated process.
 - Missing/malformed/future state is not probed or executed.
 
@@ -298,16 +316,33 @@ complete state publication.
 
 Controls:
 
-- Preserve boot-scoped monotonic renewable leases and lock inode ownership.
+- Preserve boot-scoped monotonic renewable leases and lock inode ownership for
+  diagnostics and dead-owner policy, but make a process-held kernel `flock(2)`
+  the authoritative exclusion fence.
+- Create, reclaim, publish, renew, and release logical lock metadata under that
+  fence. A suspended holder cannot be reclaimed after lease expiry; holder
+  death closes the fd and lets a contender proceed.
 - Use mode-private fsynced atomic writes.
 - Record generation-specific pending process identities before final state.
-- A later lock winner stops only verified pending proxy/backend processes.
+- Require renewed current lock ownership under the continuously held fence
+  before every pending/state write or removal.
+- Before pending cleanup, renew ownership, re-read valid metadata, require the
+  caller's generation, and signal only its exact process identities.
+- Remove pending metadata only through a renewed-lock helper that re-reads it
+  and unlinks only an equal target generation.
+- Cleanup signals only identities from freshly re-read validated pending
+  metadata, never caller state. A stale owner cannot coexist past reclaim:
+  reclaim cannot occur until its kernel fence is released by action or death.
 - Final schema-2 state appears only after pinned health.
 
 Residual risk: death between process spawn and pending publication can leave a
 short-lived/unmanaged process; bind conflicts remain safe and unknown PIDs are
 not signaled. This narrow crash window cannot be made transactional without an
 external supervisor/process broker.
+
+Unsupported procfs, flock, pidfd, Python pidfd APIs, or bounded helper startup
+fails closed and may require manual recovery. No continuously running helper is
+introduced.
 
 ### T12: Unsafe Scoped Reload
 
@@ -326,6 +361,34 @@ Controls:
 Residual risk: OpenCode lacks an atomic idle-and-dispose transaction and a TUI
 readiness endpoint.
 
+### T13: Utility Child Retains The Lifecycle Fence
+
+Threat: OpenCode version discovery, keytool, Java keystore validation, curl, or
+the pidfd helper hangs, resists SIGTERM, floods output, fails to start, or exits
+while a callback throws. A blocked Neovim event loop or unreaped child can retain
+the authoritative fence and prevent every contender from recovering.
+
+Controls:
+
+- No wait-for-result lifecycle command uses a shell or synchronous wait.
+- Protected stdin carries curl configuration and pidfd identity; keytool uses
+  `-storepass:file`. Commands, secret content, and full environments are not
+  logged.
+- Stdout and stderr are each capped at 64 KiB. A five-second child deadline is
+  additionally capped by the 30-second lifecycle deadline.
+- Timeout and overflow send SIGTERM, then SIGKILL after at most 250 ms. The exit
+  callback reaps the child before exactly-once completion and closes every pipe,
+  timer, and process handle.
+- Certificate files validate in staging before atomic publication. Every error
+  flows through async lifecycle cleanup, and callback failure or shutdown
+  releases the fence.
+- Reload creates the TUI and reconnects opencode.nvim only after releasing the
+  fence, then reacquires it and repeats the final generation comparison.
+
+Residual risk: kernel-level uninterruptible sleep can delay even SIGKILL and is
+outside application control. The child remains unpublished and no contender is
+allowed to bypass a still-live fence holder.
+
 ## Kill/Replacement Matrix
 
 | Event | Expected result |
@@ -336,7 +399,8 @@ readiness endpoint.
 | Replacement binds after expected backend death | Zero bytes because PID/start check fails before connect |
 | TUI killed | Next operation recreates attach with CA, URL, generation, and cwd |
 | Origin Neovim exits | No intentional pair stop; detached pair remains where runtime permits |
-| Lock owner killed | Lease/pending recovery is bounded and generation-specific |
+| Lock owner suspended | Kernel fence remains held; contenders cannot reclaim or mutate after lease expiry |
+| Lock owner killed | Kernel releases the fence; lease/pending recovery is bounded and generation-specific |
 | All user processes killed | New MkChad remains lazy; first operation performs bounded recovery |
 
 ## Audit Focus
@@ -345,6 +409,9 @@ Audits must prioritize CA/password exposure, public proxy impersonation,
 internal takeover before proof, same-connection violations, reconnects after
 proof, proc tuple ambiguity, process signaling, lock/pending races, legacy HTTP
 credential paths, unbounded handlers/retries, and false healthy diagnostics.
+They must also exercise every lifecycle utility-child phase for timeout,
+SIGTERM resistance, output overflow, start/nonzero/parse failure, reaping,
+callback failure, fence release, and contender progress.
 Severity/completion rules are in `docs/audit_policy.md`.
 
 ## Residual Risk Acceptance
@@ -352,6 +419,8 @@ Severity/completion rules are in `docs/audit_policy.md`.
 The accepted residuals are root control, software-only CA-key protection,
 manual browser trust, bounded denial of service, next-use rather than continuous
 recovery, detached-runtime variability, loss of in-memory work, and the explicit
-`SPOS-AUD-P1-004` local-user access exception. Credential
+`SPOS-AUD-P1-004` local-user access exception. Live schema-1 state requiring
+trusted manual accounting is a fail-safe operational limitation, not accepted
+permission to signal it. Credential
 forwarding before exact proof, reconnecting a client stream to a replacement,
 or probing legacy HTTP with auth are not accepted residual risks.

@@ -154,6 +154,9 @@ Policy:
 ### Process Safety
 
 - Validate PID ownership before any signal.
+- Require managed dispatch through a pidfd opened before final identity
+  validation; reject any PID-number signal path, helper timeout, unsupported
+  pidfd API, or post-open identity mismatch.
 - Validate process generation before state cleanup.
 - Verify negative or reused PIDs cannot target unrelated processes or groups.
 - Verify stop escalation remains scoped to the managed process.
@@ -162,15 +165,38 @@ Policy:
   executable/argv, role semantics, and owned listener inode.
 - Verify every stop/recovery path stops proxy first and never signals a live
   unverifiable process.
+- Treat every live schema-1 PID as unverifiable regardless of current path/argv;
+  never signal it during migration or explicit stop, and preserve its state with
+  actionable trusted manual-accounting guidance.
 
 ### Concurrency
 
 - Audit startup lock acquisition, ownership, expiry, and removal.
+- Verify a persistent private kernel fence is held by the lifecycle Neovim
+  process across logical lock create/reclaim/release and every shared mutation
+  and signal dispatch. Lease expiry must not bypass a suspended holder.
 - Audit concurrent first-use startup from separate Neovim processes.
 - Audit state replacement while another process is reading.
 - Audit recovery when the lock owner or state writer is killed.
+- Verify every pending write renews current lock ownership, and that a stale
+  reclaimed owner cannot overwrite, signal from, or remove newer pending data.
 - Audit port bind races in automatic and explicit modes.
 - Verify all callback and promise paths resolve exactly once.
+- Verify all fence fds unlock/close on normal completion, refusal, timeout,
+  callback error, exception, and process death; repeat failure paths and check
+  for fd growth.
+- Inventory every wait-for-result subprocess reachable while the fence may be
+  held. Require argv-only asynchronous execution, protected stdin where needed,
+  independent 64 KiB stdout/stderr limits, a five-second per-child deadline
+  capped by the remaining lifecycle deadline, TERM then 250 ms KILL escalation,
+  child reaping, exactly-once completion, and complete pipe/timer/process-handle
+  cleanup.
+- Exercise hanging and SIGTERM-resistant OpenCode version, every keytool
+  generation/export/request/sign/import/list phase, Java keystore validation,
+  curl, and pidfd-helper paths. Require fence release, separate-contender
+  progress, stable fd/process counts, and no partial state, pending, or
+  certificate publication on timeout, overflow, start/nonzero/parse error, or
+  callback exception.
 
 ### Liveness And Recovery
 
@@ -196,8 +222,15 @@ Policy:
   path/certificate identity, distinct public/internal ports, versions, and logs.
 - Verify incomplete startup uses private generation-specific pending metadata
   and cannot be mistaken for complete state.
+- Verify pending cleanup renews lock ownership, re-reads valid metadata, checks
+  the caller's generation before signaling, and conditionally unlinks only the
+  same generation.
+- Verify pending cleanup takes signal identities only from that fresh re-read,
+  and that pending/state check-and-act operations never release the kernel fence
+  between final logical validation and write/unlink.
 - Verify schema 1 is labeled legacy and is never probed or returned as a plugin
-  URL; future state is not overwritten.
+  URL; only dead legacy state is removed automatically, live legacy state is
+  preserved without signaling, and future state is not overwritten.
 
 ### TLS, Relay, And Port Safety
 
@@ -358,6 +391,10 @@ A P0 or P1 finding is resolved only when:
 
 Closing a finding because the happy path works is insufficient. Process death,
 stale state, concurrent startup, and PID reuse must be considered where relevant.
+
+Auditor pass 11 closed `SPOS-AUD-P1-007` and `SPOS-AUD-P1-008` after
+independently verifying kernel fencing, pidfd signaling, bounded subprocess
+termination/reaping, contender progress, and adjacent lifecycle regressions.
 
 ## Exceptions
 

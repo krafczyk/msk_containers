@@ -15,10 +15,12 @@
       loopback endpoints are locally accessible without a user-supplied
       `OPENCODE_SERVER_PASSWORD`.
 - [x] Preserve renewable lifecycle locking from MkChad `cdf5499`.
+- [x] Add a persistent mode-`0600` Linux `flock(2)` fence held by the Neovim
+      process across logical validation and every shared lifecycle side effect.
 - [x] Preserve bounded initial SSE connection behavior from opencode.nvim
       `e04b7a7`.
-- [x] Treat schema 1 as deployed legacy state and migrate under lock without an
-      authenticated HTTP probe.
+- [x] Treat schema 1 as deployed legacy state; never probe or signal a live PID,
+      and migrate dead matching state under lock.
 
 ## Worktree Safety
 
@@ -79,6 +81,8 @@
 - [x] Keep secrets and sensitive file content out of state.
 - [x] Use fsynced same-directory temporary writes and atomic rename.
 - [x] Use mode-`0600` transient pending metadata for interrupted startup cleanup.
+- [x] Require renewed current lock ownership before every pending write and
+      generation-matched removal.
 - [x] Publish complete state only after both listeners and pinned health pass.
 - [x] Preserve lock lease renewal, owner/inode checks, stale reclaim, and bounded
       waiting.
@@ -95,19 +99,41 @@
 - [x] Retain no `ExitPre` shared-pair stop.
 - [x] Recycle TUI on process, directory, URL, generation, or CA identity change.
 - [x] Keep all retries, waits, cleanup, and escalation bounded.
+- [x] Route every wait-for-result subprocess reachable under the lifecycle
+      fence through one argv-only async runner with protected stdin, independent
+      64 KiB stdout/stderr caps, a five-second/per-operation deadline, 250 ms
+      TERM/KILL escalation, reaping, exactly-once completion, and complete
+      pipe/timer/handle cleanup.
+- [x] Run TUI creation and opencode.nvim reconnection outside the reload fence,
+      then reacquire it for the final generation comparison.
+- [x] Create/reclaim/release the logical metadata lock only under the kernel
+      fence; lease expiry cannot bypass a live or suspended fence holder.
+- [x] Use bounded stdin-driven Linux pidfd signaling with final identity
+      validation after `pidfd_open`; retain proxy-first/backend and
+      SIGTERM/SIGKILL ordering and fail closed without pidfd support.
+- [x] Keep the persistent fence file `0600` in the `0700` host state root and
+      close every acquired fd on success, refusal, timeout, release, and death.
 
 ## Legacy And Unsafe State
 
 - [x] Label schema 1 as legacy in diagnostics.
 - [x] Never probe a schema-1 HTTP URL or give it to opencode.nvim.
-- [x] Stop only an exact verified schema-1 process before migration.
-- [x] Allow explicit stop to remove verified/dead legacy state without HTTP.
+- [x] Never signal a live schema-1 PID, even when current executable path and
+      argv exactly match; preserve state with trusted manual-accounting guidance.
+- [x] Allow migration and explicit stop to remove matching legacy state only
+      when its PID is already dead, without HTTP.
 - [x] Treat missing state as inactive.
 - [x] Diagnose malformed state without probing it; replace only under lock.
 - [x] Refuse to overwrite unsupported future schema.
 - [x] Refuse to signal live unverifiable PIDs.
 - [x] Treat pre-inode schema-2/pending metadata as malformed and require bounded
       replacement or trusted manual process accounting.
+- [x] Re-read valid pending metadata under renewed lock before cleanup, signal
+      only exact identities for the target generation, and unlink only when the
+      current generation still matches.
+- [x] Fence every pending/state publication and removal across final logical
+      validation and mutation; `cleanup_failed_pair` ignores caller identities
+      and signals only freshly re-read validated pending identities.
 
 ## Clients
 
@@ -188,6 +214,29 @@
       incomplete-other-table, and controlled production-listener cases.
 - [x] No-password startup/diagnostic warning and public/direct-internal invalid
       credential `401` checks pass.
+- [x] Auditor pass 8 repair: live schema-1 exact-argv migration and explicit stop
+      preserve state, send no signal/request, and return trusted manual-accounting
+      guidance; dead legacy state migrates under lock and malformed legacy stop
+      remains non-signaling.
+- [x] Auditor pass 8 repair: a controlled SIGSTOP, lease-expiry/reclaim, and
+      resume test proves the former owner cannot write, signal from, or remove a
+      newer pending generation; the current owner can update/remove it, while
+      newer-generation, malformed, and lock-loss paths fail closed.
+- [x] Pass-9 Builder repair: deterministic test-only pauses cover pending write/
+      remove, state publish/remove, logical reclaim, and pidfd signal after final
+      validation while the fence is held. Contenders cannot reclaim or mutate
+      after forced lease expiry; release/death permits progress; distinct newer
+      generations survive; repeated failed acquisition has no fd growth.
+- [x] Pass-9 Builder repair: pidfd helper mismatch refuses a surrogate PID, the
+      valid pidfd path preserves SIGTERM behavior, and pending failure cleanup
+      signals the freshly re-read pending identity rather than caller state.
+- [x] Pass-10 Builder repair: hanging and SIGTERM-resistant fake `opencode`,
+      `java`, and `keytool` cover version, every certificate generation/import
+      phase, both keytool list validations, and Java validation. Timeout,
+      oversized stdout/stderr, nonzero, malformed output, start failure, and
+      callback exception remain bounded, reap children, release the fence, let
+      a separate contender progress, publish no partial state/pending/TLS, and
+      show stable fd/process counts.
 - [x] Focused MkChad Lua and Python tests pass.
 - [x] `git diff --check` passes in all three repositories.
 
@@ -221,8 +270,8 @@
 - [ ] Run LuaLS and StyLua in the normal CI toolchain when available locally/CI.
 - [x] Publish opencode.nvim CA support as `a383638` and update the MkChad
       immutable pin to that exact revision.
-- [ ] Publish MkChad `99bf651` and the final coordination-document revision
-      after explicit push authorization.
+- [ ] Publish final MkChad `53a85e8` and the final coordination-document
+      revision after explicit push authorization.
 
 ## Evidence
 
@@ -235,21 +284,29 @@
 | 2026-07-14 | Concurrency | `python3 tests/concurrent_startup.py` passed two-process startup, one generation/pair, automatic fallback, origin exit persistence, pinned health, and cleanup. |
 | 2026-07-14 | Reload | Isolated headless reload passed inactive laziness, routed preflights/dispose/path, pair preservation, reconnect rejection, and busy refusal. |
 | 2026-07-14 | Lock | Existing cross-process lease test passed with renewal and dead-owner reclaim. |
-| 2026-07-14 | Environment | Java/keytool 25 can compile/run Java 21 source; local OpenCode is 1.17.18. SingularityCE, Apptainer, container builders, and StyLua are unavailable. LuaLS ran but its CI library/runtime metadata was not initialized and it emitted 828 repository-wide undefined-global/type warnings, so it is not clean static evidence. |
+| 2026-07-14 | Environment | Java/keytool 25 can compile/run Java 21 source; local OpenCode is 1.17.18. SingularityCE, Apptainer, container builders, and StyLua are unavailable. LuaLS ran without initialized CI library/runtime metadata and emitted repository-wide undefined-global/type warnings, so it is not clean static evidence. |
 | 2026-07-14 | Auditor pass 4 repair | Serial MkChad lifecycle/race/lease/reload/certificate/state/executable/concurrent-startup/proxy tests passed. Java `--release 21 -Xlint:all -Werror`, tuple/truncation/malformed proof, and `-Xmx24m` large/concurrent table tests passed. opencode.nvim protected curl, request-time REST/SSE CA, wrong/missing CA, and SSE-connect tests passed. `SPOS-AUD-P1-004` remains the explicit exception above; publication/pin remains open. |
 | 2026-07-14 | `SPOS-AUD-P1-004` acceptance | Decision-maker/user explicitly accepted the policy gate for this deployment scope, acknowledged untrusted same-host access when no password is supplied, and agreed to set a strong password before first use or stop/set/restart. Risk remains unresolved/conditional and not code-fixed; TLS/CA is not client access control. |
 | 2026-07-14 | Auditor pass 5 repair | Proc proof requires complete family-specific headers and complete bounded scans of both tables before exact cross-table uniqueness. Generic process identity compares interpreted launch and Java source inodes while retaining native `/proc/<pid>/exe` authority. Constrained-heap Java proof, proxy integration, executable/lifecycle/state/reload/lease/startup, opencode.nvim curl/TLS/security/SSE, and diff checks were rerun as recorded in the repair report. |
 | 2026-07-14 | Auditor pass 6 `SPOS-AUD-P1-005` repair | Java and Lua now validate exact family-specific headers, all required proc row fields, 17-column ordinary and 12-column `SYN_RECV`/`TIME_WAIT` forms, complete newline-terminated tcp/tcp6 scans, and exact cross-table uniqueness. Java lint/compile, tuple/header/truncation/malformed/large/concurrency, proxy integration, serial MkChad lifecycle/startup/reload/lease/state/identity/certificate/concurrent-startup, Lua >8 KiB and controlled-listener proof, and opencode.nvim TLS/security/SSE tests passed. Runtime/container/browser and publication/pin gates remain open. |
 | 2026-07-14 | Auditor pass 7 | Reported no remaining code P0/P1. `SPOS-AUD-P1-004` remains the explicitly accepted conditional exception. The only code-release gate was immutable fork publication and pinning. |
 | 2026-07-14 | Fork publication | Published opencode.nvim CA support as `a38363837c564a14f50a3a72f58f7df8dbeff3ad`; MkChad `99bf651` pins `a383638`. A fresh remote fork clone passed curl-security and SSE tests, and the cross-repository TLS integration passed with `OPENCODE_NVIM_ROOT` set to that clean clone. |
+| 2026-07-14 | Auditor pass 8 findings | Reopened the prior no-P0/P1 claim: P0 schema-1 migration/stop could promote current path/argv into signalable identity despite missing boot/start/immutable proof; P1 pending writes and unlinks were not uniformly renewed-lock and generation conditional, allowing a reclaimed owner to race newer metadata. |
+| 2026-07-14 | Auditor pass 8 Builder repair | Removed every live schema-1 signal path and added dead-only removal plus manual-accounting diagnostics. Pending publication now renews ownership before write/publication; cleanup re-reads valid matching-generation metadata before signaling and unlinks only through the renewed-lock helper. Lifecycle/state/startup-race/concurrent-startup/lease/pending-generation tests, full TLS proxy integration, Java lint/tuple/large-table tests, and opencode.nvim TLS/curl-security/SSE regressions passed. Fresh independent audit remains open; this is repair evidence, not closure. |
+| 2026-07-14 | Auditor pass 9 reopening and Builder repair | Reopened pending-generation fencing because lease rechecks could not prevent a suspended actor from resuming between final validation and mutation, and PID-number signaling remained reusable after validation. Added a process-held persistent `flock(2)` fence around logical lock create/reclaim/release and all shared side effects, plus bounded stdin-driven post-`pidfd_open` identity validation and pidfd signaling. Deterministic fence/pidfd pauses, lease expiry, contender block/progress, holder death, distinct generations, fresh-pending cleanup, surrogate PID refusal, and repeated-failure fd counts passed. The full serial MkChad lifecycle suite, concurrent startup, TLS integration, Java lint/tuple/large-table tests, opencode.nvim TLS/security/SSE, Python compile, and diff checks were rerun. Fresh independent audit remains open; this Builder evidence does not close `SPOS-AUD-P1-007`. |
+| 2026-07-14 | Auditor pass 10 reopening and Builder repair | `SPOS-AUD-P1-008` reopened the no-known-P0/P1 claim because synchronous or independently unbounded OpenCode version, keytool, Java validation, curl, and pidfd-helper subprocesses could retain the authoritative fence indefinitely. One libuv runner now enforces argv-only execution, protected stdin, 64 KiB stream caps, five-second/operation deadlines, TERM then 250 ms KILL, reaping, exactly-once completion, and handle cleanup. Certificate validation occurs before staged publication; reload TUI/plugin subprocesses run outside the fence with final fenced revalidation. The new subprocess matrix; serial lifecycle/certificate/state/identity/pending/startup-race/reload/lease/proc/fence tests; concurrent startup; pidfd helper; TLS integration; Java lint/tuple/constrained-heap tests; opencode.nvim TLS/security/SSE; Python compile; and three-repository diff checks passed. Failure-phase and real lifecycle regressions are Builder evidence only; fresh independent audit remains open. |
+| 2026-07-14 | Auditor pass 11 | Reported no remaining code P0/P1. It closed `SPOS-AUD-P1-007` and `SPOS-AUD-P1-008` after independently verifying suspended-holder fencing, owner-death recovery, pidfd identity, bounded subprocess timeout/escalation/reaping, contender progress, and the full serial/integration suite. It recorded nonblocking P2 gaps for shutdown certificate-staging cleanup and fresh final reload health validation. `SPOS-AUD-P1-004` remains the accepted conditional exception. |
 
 ## Completion Gate
 
 - [x] `SPOS-AUD-P0-003` implementation and clean-fork fixture evidence are
       complete in committed revisions.
-- [x] No known P0/P1 remains in the implemented same-connection relay path;
-      the `SPOS-AUD-P1-004` policy gate is accepted for this deployment scope,
-      but its risk remains unresolved/conditional outside the code-fixed claim.
+- [x] A fresh independent audit confirms the pass-8 P0/P1 repairs and restores
+      the no-known-P0/P1 claim, including the pass-9 `SPOS-AUD-P1-007` kernel-
+      fence/pidfd repair and pass-10 `SPOS-AUD-P1-008` bounded-subprocess repair.
+      Builder repair evidence is recorded above but does not close the findings.
+      `SPOS-AUD-P1-004` remains the accepted, unresolved
+      conditional policy exception for this deployment scope.
 - [x] No secrets or unrelated untracked files were added to diffs.
 - [ ] Runtime/container/browser gates above are complete.
 - [x] The reviewed opencode.nvim revision is published and the committed MkChad
