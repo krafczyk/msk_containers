@@ -2,13 +2,17 @@
 
 ## Sprint Coordination Root
 
-This repository is the coordination root for the single persistent OpenCode
-server sprint. The governing documents are:
+This repository is the coordination root for the optional OpenCode transport
+sprint. The governing documents are:
 
 - `docs/single-opencode-server/SPRINT_SPEC.md`
 - `docs/single-opencode-server/SPRINT_CHECKLIST.md`
 - `docs/threat_model.md`
 - `docs/audit_policy.md`
+
+The superseded TLS-only implementation baseline is archived under
+`docs/archive/single-opencode-server-tls-baseline/`. Archived sprint documents
+are historical evidence and are not governing documents for new work.
 
 ## Related Repositories
 
