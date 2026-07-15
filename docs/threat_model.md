@@ -66,7 +66,7 @@ process death while Linux procfs and user file permissions remain trustworthy.
 - Linux provides working advisory `flock(2)` and pidfds; Python 3 provides
   `os.pidfd_open` and `signal.pidfd_send_signal` in every target image.
 - Other unprivileged users cannot modify mode-`0700` state directories or read
-  mode-`0600` state, logs, password, or keystores.
+  the mode-`0600` server config, state, logs, password, or keystores.
 - Java 21/keytool, curl, OpenCode, and the selected executables are trusted.
 - SingularityCE/Apptainer uses compatible host network/PID visibility.
 - Hostname namespaces shared-home state but is not a credential.
@@ -80,7 +80,7 @@ process death while Linux procfs and user file permissions remain trustworthy.
 - Bind public and internal listeners only to loopback.
 - Require explicit state CA for every lifecycle/plugin curl and
   `NODE_EXTRA_CA_CERTS` for attach.
-- Keep CA key, password, stores, state, and logs private.
+- Keep server config, CA key, password, stores, state, and logs private.
 - Keep password content out of argv/state/logs/notifications/repository.
 - Prominently warn and diagnose when no user-supplied Basic Auth password is
   present; do not invent or force a password.
@@ -130,14 +130,16 @@ mint/serve a trusted replacement.
 
 ### T1A: Unauthenticated Local-User Access
 
-Threat: when `OPENCODE_SERVER_PASSWORD` is absent, another user on the same host
-connects to the public TLS proxy or discovers and directly connects to the
-internal loopback backend. TLS server authentication and relay tuple proof do
-not deny that client.
+Threat: when no password is supplied through protected MkChad config or
+`OPENCODE_SERVER_PASSWORD`, another user on the same host connects to the public
+TLS proxy or discovers and directly connects to the internal loopback backend.
+TLS server authentication and relay tuple proof do not deny that client.
 
-Controls: MkChad preserves OpenCode's user-supplied Basic Auth on both endpoints,
-warns at first use and in diagnostics, and documents the strong-password
-stop/restart workaround. It does not generate a credential.
+Controls: MkChad accepts a user-supplied credential from a strict, ignored,
+current-user-owned mode-`0600` config or the process environment, preserves
+OpenCode Basic Auth on both endpoints, warns at first use and in diagnostics,
+and documents the strong-password stop/restart workaround. It does not generate
+a credential.
 
 Residual risk: unauthenticated local access remains a P1 under explicit
 exception `SPOS-AUD-P1-004`; owner, workaround, follow-up, and reevaluation

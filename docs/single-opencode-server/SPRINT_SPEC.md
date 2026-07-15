@@ -21,12 +21,20 @@ CA. OpenCode Basic Auth credentials, request bodies, prompts, and SSE data are
 sent only through a CA-authenticated TLS connection.
 
 **Multi-user warning:** TLS authenticates server identity, not clients, and CA
-possession does not control client access. Unless the user supplies
+possession does not control client access. Unless the user supplies an OpenCode
+server password through MkChad's protected config or
 `OPENCODE_SERVER_PASSWORD`, both the public proxy and discoverable internal
 loopback backend are unauthenticated to other local users. Set a strong existing
-environment password before first use; if already running, set it, stop the
-shared pair, and restart. This is the explicit `SPOS-AUD-P1-004` exception in
+password before first use; if already running, set it, stop the shared pair, and
+restart. This is the explicit `SPOS-AUD-P1-004` exception in
 `docs/audit_policy.md`.
+
+MkChad optionally reads `opencode-server.json` from its config directory when
+the OpenCode plugin first loads. It accepts only `port`, `username`, and
+`password`, requires a current-user-owned regular mode-`0600` file, rejects
+malformed or unsupported content, and ignores the secret-bearing file in Git.
+Non-empty OpenCode environment settings override corresponding file values.
+Neither source is persisted in lifecycle state, argv, logs, or notifications.
 
 The proxy does not trust a process name, listener, health response, or PID by
 itself. For every client TLS connection it opens exactly one connection to the
@@ -317,8 +325,9 @@ The lock winner:
    already dead. A live legacy PID fails safely without probing or signaling.
 5. Cleans verified interrupted `pending.json` processes.
 6. Ensures stable certificate material.
-7. Selects the public port: exact `OPENCODE_PORT`, persisted automatic port,
-   preferred `4096`, or bounded high fallback.
+7. Selects the public port: exact protected-config/`OPENCODE_PORT` value,
+   persisted automatic port, preferred `4096`, or bounded high fallback. An
+   occupied configured port fails without fallback.
 8. Selects a distinct bounded automatic high internal port.
 9. Launches detached `opencode serve` and proves exact identity/listener.
 10. Launches the Java proxy with immutable backend PID/start/boot/port and proves
@@ -426,7 +435,8 @@ state and starts no process.
 - The CA signing key is protected by user filesystem permissions, not hardware.
 - Internal HTTP exists on loopback. The relay prevents managed clients from
   sending credentials before proof; it does not make loopback invisible.
-- Without `OPENCODE_SERVER_PASSWORD`, local users can use both endpoints. TLS
+- Without a password in protected MkChad config or
+  `OPENCODE_SERVER_PASSWORD`, local users can use both endpoints. TLS
   authenticates only server identity. See the explicit P1 exception in
   `docs/audit_policy.md`.
 - Detached persistence still depends on SingularityCE/Apptainer/site policy.

@@ -5,7 +5,8 @@
 - [x] Use one lazy detached proxy/backend pair per user and host.
 - [x] Use stable host-CA-authenticated HTTPS on the public loopback port.
 - [x] Keep OpenCode on a distinct automatic high internal loopback port.
-- [x] Preserve `OPENCODE_PORT`/preferred `4096` as public-port policy.
+- [x] Preserve exact protected-config/`OPENCODE_PORT` and preferred `4096` as
+      public-port policy; configured conflicts never fall back.
 - [x] Prove backend ownership on the exact established connection before client
       bytes are read/forwarded.
 - [x] Use Java 21 `SSLServerSocket`, PKCS12, keytool, and virtual threads; do not
@@ -13,7 +14,7 @@
 - [x] Preserve Basic Auth rather than generating OpenCode credentials.
 - [x] Warn that TLS authenticates the server, not clients, and that both
       loopback endpoints are locally accessible without a user-supplied
-      `OPENCODE_SERVER_PASSWORD`.
+      config-file or `OPENCODE_SERVER_PASSWORD` credential.
 - [x] Preserve renewable lifecycle locking from MkChad `cdf5499`.
 - [x] Add a persistent mode-`0600` Linux `flock(2)` fence held by the Neovim
       process across logical validation and every shared lifecycle side effect.
@@ -214,6 +215,10 @@
       incomplete-other-table, and controlled production-listener cases.
 - [x] No-password startup/diagnostic warning and public/direct-internal invalid
       credential `401` checks pass.
+- [x] Protected mode-`0600` MkChad server config supplies port/username/password,
+      environment values override it, malformed JSON, invalid fields,
+      unsupported keys, insecure modes, empty/oversized files, and symlinks fail
+      closed, and an occupied configured port selects no fallback.
 - [x] Auditor pass 8 repair: live schema-1 exact-argv migration and explicit stop
       preserve state, send no signal/request, and return trusted manual-accounting
       guidance; dead legacy state migrates under lock and malformed legacy stop
@@ -248,9 +253,9 @@
       deployment scope, acknowledging that untrusted same-host users can access
       no-password deployments. The risk remains unresolved/conditional and was
       not code-fixed; TLS/CA is not client access control.
-- [x] The bounded operational workaround is to set a strong existing
-      `OPENCODE_SERVER_PASSWORD` before first use, or set it and stop/restart an
-      existing pair.
+- [x] The bounded operational workaround is to set a strong existing password
+      in protected MkChad config or `OPENCODE_SERVER_PASSWORD` before first use,
+      or set it and stop/restart an existing pair.
 - [ ] `SPOS-FOLLOWUP-AUTH-001` resolves or re-accepts the local-user access risk
       at its documented reevaluation trigger.
 

@@ -426,19 +426,21 @@ behavior.
   or stop/set/restart workaround.
 - **Owner:** Matthew Krafczyk, MkChad maintainer.
 - **Rationale:** The selected contract preserves OpenCode Basic Auth when the
-  user supplies `OPENCODE_SERVER_PASSWORD`, but neither generates nor forces a
-  password. TLS authenticates server identity only. Changing that contract in
-  this repair would require credential generation/distribution and recovery
-  design beyond the approved sprint behavior.
+  user supplies a password through MkChad's protected config or
+  `OPENCODE_SERVER_PASSWORD`, but neither generates nor forces a password. TLS
+  authenticates server identity only. Changing that contract would require
+  credential generation/distribution and recovery design beyond the approved
+  sprint behavior.
 - **Scoped bound:** Both listeners remain loopback-only, so exposure is limited
   to users/processes on the same host. This does not make the data exposure
   acceptable by itself. TLS/CA authenticates server identity and is not client
   access control; CA possession does not control access.
-- **Operational workaround:** Set a strong existing
-  `OPENCODE_SERVER_PASSWORD` in the MkChad/OpenCode environment before first
-  use. If a pair already runs, set the variable, run `:OpenCodeStop`, and start
-  OpenCode again. Confirm invalid credentials receive `401` from both the public
-  proxy and direct internal endpoint.
+- **Operational workaround:** Set a strong existing password in MkChad's
+  protected mode-`0600` `opencode-server.json` or
+  `OPENCODE_SERVER_PASSWORD` before first use. If a pair already runs, update
+  the setting, run `:OpenCodeStop`, restart Neovim when the file changed, and
+  start OpenCode again. Confirm invalid credentials receive `401` from both the
+  public proxy and direct internal endpoint.
 - **Follow-up:** `SPOS-FOLLOWUP-AUTH-001` must design and approve either a
   mandatory user-supplied credential gate or an equivalent per-user endpoint
   access control without inventing a password.
