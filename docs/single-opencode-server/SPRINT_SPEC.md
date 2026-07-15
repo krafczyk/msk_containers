@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Implemented and regression-tested in an isolated MkChad clone; runtime evidence and completion audit remain open |
+| Status | Implementation-ready with zero P0/P1 findings; publication and deployment-only browser/container evidence remain open |
 | Decision date | 2026-07-15 |
 | Scope | `msk_containers`, MkChad configuration, and verification against `krafczyk/opencode.nvim` |
 | Baseline | `msk_containers` `ec5a5be`; MkChad `938c325`; `opencode.nvim` `a383638` |
@@ -481,6 +481,15 @@ Required coverage includes:
   prevents automatic flapping but cannot update stale process memory.
 - Browser bookmarks are scheme-specific; switching transport changes HTTPS to
   HTTP or vice versa even when the port remains stable.
+
+## Publication Gate
+
+1. Publish opencode.nvim `59ad0b8` and verify that exact commit is remotely
+   reachable.
+2. Only then publish the MkChad revision that pins `59ad0b8`; repeat the pinned
+   REST, SSE, and TLS integration checks from clean remote clones.
+3. Publish coordination evidence after both implementation revisions are
+   reachable. Never update the live MkChad configuration to an unpublished pin.
 
 ## Rollback
 

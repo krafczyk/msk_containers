@@ -86,7 +86,7 @@
 - [x] Reuse healthy schema-2 TLS state without unsafe mutation.
 - [x] Publish all new generations as schema 3.
 - [x] Preserve live schema-1 non-signaling behavior.
-- [ ] Ensure older code treats schema 3 as unsupported and non-mutable.
+- [x] Ensure older code treats schema 3 as unsupported and non-mutable.
 - [x] Document stop-before-downgrade requirements.
 
 ## Mode Agreement And Transitions
@@ -145,21 +145,21 @@
 
 ## Death And Stop
 
-- [ ] Keep proxy/backend recovery next-use rather than watchdog-driven.
-- [ ] Prove proxy-only death leaves backend/state unchanged before an ensuring
+- [x] Keep proxy/backend recovery next-use rather than watchdog-driven.
+- [x] Prove proxy-only death leaves backend/state unchanged before an ensuring
       action.
-- [ ] Keep `:OpenCodeInfo` observational after proxy death.
-- [ ] Keep reload from starting an unhealthy service.
+- [x] Keep `:OpenCodeInfo` observational after proxy death.
+- [x] Keep reload from starting an unhealthy service.
 - [x] On ensure after proxy death, stop the verified backend and replace the full
       TLS generation.
 - [x] Repair `:OpenCodeStop` to clean a verified surviving backend after proxy
       death without launching a replacement.
-- [ ] Never signal a surviving backend if its identity is unverifiable.
-- [ ] Preserve matching state unless all exact managed roles are confirmed dead.
+- [x] Never signal a surviving backend if its identity is unverifiable.
+- [x] Preserve matching state unless all exact managed roles are confirmed dead.
 - [x] Preserve bounded TERM, exit wait, KILL escalation, and final death check.
-- [ ] Preserve state on identity, helper, signal, timeout, escalation, or final
+- [x] Preserve state on identity, helper, signal, timeout, escalation, or final
       death-confirmation failure.
-- [ ] Keep public-port reuse conditional on availability.
+- [x] Keep public-port reuse conditional on availability.
 - [x] Keep valid CA identity stable across ordinary TLS recovery.
 - [x] Recover a dead direct backend on the next ensuring action.
 - [x] Never adopt a surviving TLS backend as direct mode.
@@ -200,9 +200,9 @@
 - [x] Add exact and automatic port-conflict tests in both modes.
 - [x] Add TLS-to-direct and direct-to-TLS explicit transition tests.
 - [x] Add stale opposite-mode Neovim refusal tests.
-- [ ] Expand proxy-death tests for the no-watchdog interval, info, reload,
+- [x] Expand proxy-death tests for the no-watchdog interval, info, reload,
       ensuring recovery, port/CA stability, and explicit partial stop.
-- [ ] Test partial stop with TERM resistance, KILL escalation, helper failure,
+- [x] Test partial stop with TERM resistance, KILL escalation, helper failure,
       timeout, identity mismatch, and unconfirmed death; require state retention
       on every incomplete cleanup.
 - [x] Add direct backend death and replacement-listener tests.
@@ -211,7 +211,7 @@
 - [x] Parameterize reload and TUI tests for both modes.
 - [x] Verify direct mode creates no TLS files from an empty fixture.
 - [x] Verify retained TLS files survive direct mode unchanged.
-- [ ] Verify credentials/config content stay out of state, argv, logs,
+- [x] Verify credentials/config content stay out of state, argv, logs,
       notifications, Git diffs, and test output.
 
 ## Regression Verification
@@ -234,8 +234,9 @@
 
 ## Verification Evidence (2026-07-15)
 
-- MkChad implementation and tests ran from the isolated clone
-  `/tmp/opencode/spos-pass1/mkchad`; the live MkChad checkout remained read-only.
+- Final MkChad verification ran from the fresh isolated clone
+  `/tmp/opencode/spos-final-verification/mkchad`; the live MkChad checkout
+  remained read-only.
 - Fresh `/tmp/opencode/**` state roots passed TLS and direct lifecycle, both-mode
   reload, both-mode concurrent startup, config, certificate, pending, schema
   matrix, lock, fence, startup-race, executable-identity, proc-scanner,
@@ -243,10 +244,20 @@
 - `javac --release 21 -Xlint:all -Werror`, Java tuple/large-table tests, the full
   TLS proxy integration, and opencode.nvim protected-curl/HTTP/TLS/SSE tests
   passed.
+- Isolated runtime-equivalent fixtures passed dead-proxy client
+  disconnect/no-watchdog/info/reload/recovery, free/occupied public-port
+  recovery, topology-specific partial-stop failure matrices, Basic Auth,
+  generated disclosure canaries, schema-3 baseline refusal, and full
+  schema-3-to-schema-2 rollback. Audit policy keeps the corresponding intended-
+  deployment runtime boxes open.
+- opencode.nvim response errors are redacted in local commit `59ad0b8`; MkChad
+  pins that exact revision, and a fresh pinned clone passed REST, SSE, and TLS
+  integration.
 - `git diff --check` passed in every changed repository. A fresh final Auditor
-  reported zero P0 and zero P1 findings after launch-intent reconciliation.
-- Browser, SSH-tunnel, container-runtime, and destructive rollback checks remain
-  open and are not claimed by this evidence.
+  reported zero P0 and zero P1 findings.
+- No browser, SSH server, Docker, Podman, SingularityCE, or Apptainer executable
+  is available in this environment. Interactive browser/SSH and container
+  persistence checks remain deployment-only and are not claimed here.
 
 ## Documentation
 
