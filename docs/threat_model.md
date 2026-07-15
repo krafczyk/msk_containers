@@ -2,13 +2,14 @@
 
 ## Scope
 
-This model covers the schema-2 single persistent OpenCode HTTPS service in
-`docs/single-opencode-server/SPRINT_SPEC.md`:
+This model covers schema-2 compatibility state and schema-3 persistent OpenCode
+service state in `docs/single-opencode-server/SPRINT_SPEC.md`:
 
 ```text
 MkChad/Neovim
-  -> detached Java TLS proxy on stable public loopback port
-  -> detached OpenCode backend on automatic internal loopback port
+  -> hardened TLS: detached Java TLS proxy on stable public loopback port
+     -> detached OpenCode backend on automatic internal loopback port
+  -> trusted-host direct: detached OpenCode backend on the public loopback port
   -> directory-scoped opencode attach TUI
 ```
 
@@ -34,6 +35,50 @@ availability against root.
 The practical boundary protects against accidental PID reuse, stale state,
 ordinary unprivileged local endpoint replacement, bind races, and selective
 process death while Linux procfs and user file permissions remain trustworthy.
+
+## Deployment Profiles
+
+### Hardened TLS Profile
+
+`"tls_proxy": true`, including an absent setting, is the default and required
+profile where any local user or process is untrusted. It retains the Java TLS
+proxy, distinct internal backend port, stable host CA and `127.0.0.1` leaf,
+CA-pinned clients, fixed unauthenticated preflight, exact tuple/inode proof
+before client bytes, and no reconnect to a replacement backend. TLS authenticates
+the server but not clients: a strong user-supplied Basic Auth password remains
+required on a multi-user host because the internal backend port is discoverable
+and directly reachable.
+
+Direct HTTP, plaintext Basic Auth, absent CA-pinned server identity, or stale
+client delivery to a replacement listener is a policy-reportable P0 in this
+profile. A protected config file selects the mode; it does not make direct HTTP
+safe against an untrusted local user or process.
+
+### Trusted-Host Direct Profile
+
+`"tls_proxy": false` is an explicit trusted-host opt-out, permitted only when
+all relevant same-host users and processes are trusted or the owner explicitly
+accepts their capabilities. The excluded threats are their ability to inspect
+plaintext loopback traffic (including a Basic Auth header), send requests to the
+backend, bind the public port after backend death, and receive traffic from stale
+HTTP clients. Direct mode deliberately has no CA-pinned server identity, TLS
+encryption, relay tuple/inode proof, or replacement-listener protection. An SSH
+tunnel does not restore local endpoint identity after it terminates on the host.
+
+The protected, current-user-owned mode-`0600` config controls who selects the
+profile, not transport security. The following controls remain mandatory:
+loopback-only binding; strict config and schema-3 transport validation;
+mode-mismatch refusal; exact backend executable/argv/start/boot/listener proof
+before authenticated health; configured-port conflict refusal; kernel fence,
+generation-conditional cleanup, and pidfd-only signaling; bounded recovery;
+private metadata; and no credential disclosure in argv, state, logs,
+notifications, or repository history. Basic Auth can reject ordinary
+unauthenticated use but is not direct-HTTP transport encryption or server
+authentication.
+
+Reevaluate this profile before adding an untrusted user/process, packet-capture
+capability, non-loopback exposure, or a different tunneling assumption. Stop
+direct mode and use hardened TLS until the model is reviewed after any trigger.
 
 ## Assets
 
@@ -78,8 +123,9 @@ process death while Linux procfs and user file permissions remain trustworthy.
 ## Required Controls
 
 - Bind public and internal listeners only to loopback.
-- Require explicit state CA for every lifecycle/plugin curl and
-  `NODE_EXTRA_CA_CERTS` for attach.
+- In the hardened TLS profile, require explicit state CA for every
+  lifecycle/plugin curl and `NODE_EXTRA_CA_CERTS` for attach. Direct-profile
+  clients use HTTP and receive no active CA setting.
 - Keep server config, CA key, password, stores, state, and logs private.
 - Keep password content out of argv/state/logs/notifications/repository.
 - Prominently warn and diagnose when no user-supplied Basic Auth password is
@@ -260,7 +306,8 @@ and diagnostics/recovery send Basic Auth before migration.
 Controls:
 
 - Schema 1 is labeled legacy and never probed.
-- The plugin URL/CA resolvers expose only schema 2.
+- The plugin URL/CA resolvers expose only validated schema-2 TLS or schema-3
+  transport-discriminated state.
 - Migration and explicit stop never signal a live schema-1 PID, even if current
   executable path and argv match the record.
 - Matching legacy state may be removed under lock only when its PID is dead.
@@ -272,16 +319,19 @@ rather than risk signaling a reused PID; manual intervention is required.
 
 ### T9: Selective Proxy Or Backend Death
 
-Threat: an administrator kills one member and leaves stale state/the other
-member alive.
+Threat: an administrator kills one TLS member and leaves stale state/the other
+member alive, or kills the direct backend while its state remains.
 
 Controls:
 
-- Reuse requires both exact process identities/listeners, certificate identity,
-  and pinned health.
-- Any member death causes proxy-first cleanup of the surviving verified member
-  and a new pair/generation on next use.
-- Public port and valid certificate material are reused.
+- TLS reuse requires both exact process identities/listeners, certificate
+  identity, and pinned health. Any TLS member death causes proxy-first cleanup
+  of the surviving verified member and a new pair/generation on next use.
+- Direct reuse requires the exact backend identity/listener and HTTP health. A
+  dead direct backend is replaced as one new generation without adopting a
+  replacement listener.
+- The public port is reused when available, and valid certificate material is
+  retained across TLS recovery and direct operation.
 - Local TUI recycles on generation/CA/process mismatch.
 - There is no unbounded background watchdog.
 
@@ -325,6 +375,10 @@ Controls:
   fence. A suspended holder cannot be reclaimed after lease expiry; holder
   death closes the fd and lets a contender proceed.
 - Use mode-private fsynced atomic writes.
+- Publish a generation-specific launch intent before each backend or proxy
+  spawn. Transfer authority to validated pending metadata only after immutable
+  identity capture, and block every later startup while an unresolved intent
+  remains.
 - Record generation-specific pending process identities before final state.
 - Require renewed current lock ownership under the continuously held fence
   before every pending/state write or removal.
@@ -335,12 +389,15 @@ Controls:
 - Cleanup signals only identities from freshly re-read validated pending
   metadata, never caller state. A stale owner cannot coexist past reclaim:
   reclaim cannot occur until its kernel fence is released by action or death.
-- Final schema-2 state appears only after pinned health.
+- Final schema-3 state appears only after transport-appropriate ownership and
+  health validation; healthy existing schema-2 TLS state may be reused without
+  mutation.
 
 Residual risk: death between process spawn and pending publication can leave a
-short-lived/unmanaged process; bind conflicts remain safe and unknown PIDs are
-not signaled. This narrow crash window cannot be made transactional without an
-external supervisor/process broker.
+short-lived process that the launch intent blocks but cannot authorize the
+lifecycle to signal. Trusted operating-system process accounting and manual
+intent removal are then required. This narrow authority-transfer window cannot
+be made transactional without an external supervisor/process broker.
 
 Unsupported procfs, flock, pidfd, Python pidfd APIs, or bounded helper startup
 fails closed and may require manual recovery. No continuously running helper is
@@ -353,12 +410,14 @@ or replaces the shared pair.
 
 Controls:
 
-- Revalidate complete schema-2 state and pinned health under lock.
+- Revalidate complete schema-2 TLS or schema-3 transport state and
+  transport-appropriate health under lock.
 - Resolve current absolute cwd and route every request.
 - Refuse busy sessions, permissions, or questions.
 - Supply CA/auth/body through protected stdin curl config.
 - Validate recreated `/path`, reconnect SSE, and recycle only local TUI.
-- Require both PIDs, generation, URL/port, and certificate identity unchanged.
+- Require backend PID, transport, generation, and URL/port unchanged; require
+  proxy PID and certificate identity unchanged only in TLS mode.
 
 Residual risk: OpenCode lacks an atomic idle-and-dispose transaction and a TUI
 readiness endpoint.
@@ -391,6 +450,24 @@ Residual risk: kernel-level uninterruptible sleep can delay even SIGKILL and is
 outside application control. The child remains unpublished and no contender is
 allowed to bypass a still-live fence holder.
 
+### T14: Direct Loopback HTTP Exposure And Replacement
+
+Threat: in direct mode, a same-host process can observe plaintext loopback HTTP,
+receive a Basic Auth header, or capture the public port after the expected
+backend dies and receive traffic from stale HTTP clients.
+
+Controls: this is excluded only by the trusted-host direct-profile assumption.
+The implementation still binds only to loopback, validates the protected mode
+selection and exact backend listener before managed authenticated health, refuses
+unknown configured-port conflicts, and never auto-adopts a replacement. It does
+not claim CA-pinned identity, relay tuple/inode proof, or stale-client protection
+in direct mode. Basic Auth remains available but does not encrypt the header.
+
+Residual risk: this threat is a policy-reportable P0 in the hardened TLS profile
+and cannot be accepted there. It is an explicit deployment-owner opt-out only
+within the trusted-host assumptions; those assumptions must be reevaluated on
+the triggers stated in the deployment-profile section.
+
 ## Kill/Replacement Matrix
 
 | Event | Expected result |
@@ -404,6 +481,15 @@ allowed to bypass a still-live fence holder.
 | Lock owner suspended | Kernel fence remains held; contenders cannot reclaim or mutate after lease expiry |
 | Lock owner killed | Kernel releases the fence; lease/pending recovery is bounded and generation-specific |
 | All user processes killed | New MkChad remains lazy; first operation performs bounded recovery |
+
+## Policy Profile Review
+
+On 2026-07-15 the Builder reviewed the two profiles against the accepted
+decision in `SPRINT_SPEC.md`: direct HTTP remains prohibited and P0-reportable
+for hardened multi-user deployments, while trusted-host direct mode is a
+documented opt-out with the exclusions, mandatory controls, and reevaluation
+triggers above. This review authorizes only subsequent implementation that
+preserves those profile boundaries.
 
 ## Audit Focus
 

@@ -20,8 +20,39 @@ Audits cover sprint-related changes in:
 The audit should consider the combined behavior of all three repositories, not
 only each repository in isolation.
 
-The threat assumptions in `docs/threat_model.md` are normative for security and
-availability findings.
+The threat assumptions and deployment profiles in `docs/threat_model.md` are
+normative for security and availability findings.
+
+## Deployment Profile Rules
+
+### Hardened TLS Profile
+
+For `"tls_proxy": true` (including an absent key), direct HTTP is a P0. Audits
+must require the TLS proxy, distinct backend port, protected CA, pinned clients,
+relay tuple/inode proof, and all process/fence/pidfd controls. Basic Auth remains
+required on a multi-user host because the discoverable internal backend is
+directly reachable and TLS does not authorize clients.
+
+### Trusted-Host Direct Profile
+
+For `"tls_proxy": false`, audits must verify that direct HTTP is presented only
+as an explicit trusted-host opt-out. The protected mode-`0600` config selects
+the mode; it is not a transport-security control. The owner must trust or accept
+same-host plaintext, Basic Auth header, and replacement-listener capability. An
+SSH tunnel does not restore identity after it terminates on the host, and Basic
+Auth over direct HTTP does not encrypt the header or authenticate the server.
+
+Direct mode must still satisfy loopback-only binding, strict config/state
+transport validation, mode-mismatch refusal, exact backend identity/listener
+proof before managed authenticated health, configured-port conflict refusal,
+private files, credential non-disclosure, kernel fencing,
+generation-conditional cleanup, pidfd-only signaling, and bounded recovery. The
+trusted-host assumption excludes only direct plaintext and stale replacement
+listener threats; it does not excuse another P0/P1 failure. Record a P0 if
+direct mode is presented as multi-user hardening or used outside this profile.
+
+Reevaluate before untrusted users/processes, packet-capture capability,
+non-loopback exposure, or changed tunnel assumptions are added.
 
 ## Audit Principles
 
@@ -36,9 +67,11 @@ availability findings.
 - Audits must not recommend evading system administration controls.
 - Audits must preserve laziness: ordinary MkChad startup and status inspection
   must not start OpenCode.
-- Audits must treat pinned HTTPS health as liveness truth only after exact
-  schema-2 proxy/backend identity, listener, CA, and same-connection controls
-  validate; persistent state remains coordination metadata.
+- Audits must treat pinned HTTPS health as liveness truth only after exact TLS
+  proxy/backend identity, listener, CA, and same-connection controls validate.
+  In the trusted-host direct profile, HTTP health is meaningful only after exact
+  schema-3 direct backend identity and public-listener ownership validate;
+  persistent state remains coordination metadata.
 - Audits must account for shared homes, multiple hosts, multiple MkChad
   processes, PID reuse, and port races.
 - Audits must not modify unrelated user changes.
@@ -61,8 +94,8 @@ Examples:
 - Making ordinary MkChad startup consistently unusable across supported hosts.
 - Connecting project commands to an untrusted endpoint while treating it as the
   managed server.
-- Sending credentials, bodies, prompts, or SSE bytes over direct HTTP or before
-  exact established-backend socket proof.
+- In the hardened TLS profile, sending credentials, bodies, prompts, or SSE
+  bytes over direct HTTP or before exact established-backend socket proof.
 - Reconnecting an already accepted client stream to a replacement backend.
 - Exposing the CA private key or keytool password through argv, state, logs, or
   permissions available to other users.
@@ -448,6 +481,26 @@ behavior.
   untrusted local users, before either listener becomes non-loopback, when
   OpenCode authentication semantics change, when a per-user transport becomes
   available, or when OpenCode v2 architecture is selected.
+
+### Optional Transport Policy Review
+
+- **Status:** Reviewed against the accepted 2026-07-15 optional-transport
+  decision before production implementation. This does not close a direct-HTTP
+  risk in the hardened profile.
+- **Hardened rule:** Direct HTTP remains a policy-reportable P0 for a multi-user
+  hardened deployment. The TLS proxy, pinned CA, distinct backend port, and
+  relay proof controls remain mandatory.
+- **Trusted-host rule:** Direct HTTP is an explicit opt-out only when the owner
+  accepts or trusts same-host plaintext, credential, and endpoint-replacement
+  capability. Protected config chooses mode but does not secure the hop; Basic
+  Auth is not encryption; and SSH tunneling does not restore host-local endpoint
+  identity.
+- **Mandatory direct controls:** Loopback-only binding, strict config and
+  transport state, exact backend ownership before health, port-conflict refusal,
+  private metadata, no secret disclosure, fence/generation/pidfd process safety,
+  and bounded recovery remain audit requirements.
+- **Reevaluation trigger:** Reassess before any untrusted user/process,
+  packet-capture capability, non-loopback exposure, or changed tunneling model.
 
 ## Completion Gate
 

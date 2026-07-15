@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Proposed; implementation and independent audit not started |
+| Status | Implemented and regression-tested in an isolated MkChad clone; runtime evidence and completion audit remain open |
 | Decision date | 2026-07-15 |
 | Scope | `msk_containers`, MkChad configuration, and verification against `krafczyk/opencode.nvim` |
 | Baseline | `msk_containers` `ec5a5be`; MkChad `938c325`; `opencode.nvim` `a383638` |
@@ -249,6 +249,13 @@ the proxy phase; in `loopback-http` it is the only valid role layout.
 Pending writes, removals, cleanup, and process signaling retain the existing
 generation-conditional kernel-fence and pidfd requirements.
 
+Before each role spawn, `launch.json` records a generation, boot, role, port,
+and, once known, PID. A later startup remains blocked while the intent's role is
+not covered by matching validated pending metadata. Under the fence, exact
+same-generation/boot/role/port/PID coverage transfers authority to pending
+metadata and permits intent removal; unmatched intent requires trusted manual
+process accounting.
+
 ### Compatibility And Downgrade
 
 - Existing valid schema-2 state is interpreted as `tls-proxy`.
@@ -258,7 +265,8 @@ generation-conditional kernel-fence and pidfd requirements.
 - Schema-2 state is never reinterpreted as direct mode.
 - Existing schema-1 state remains legacy and non-signalable while live.
 - Older MkChad versions reject schema 3 as a future schema and must not remove or
-  signal it. A user must explicitly stop the new generation before downgrade.
+  signal it. A user must explicitly stop the new generation and confirm no
+  launch intent before downgrade.
 
 ## Lifecycle Contract
 
@@ -278,13 +286,16 @@ Before reuse, ensure compares the process-cached config mode with trusted state:
 
 Under the existing kernel fence and logical lock, startup:
 
-1. Validates or cleans existing state and matching pending metadata.
+1. Validates or cleans existing state, matching pending metadata, and any
+   exactly covered launch intent.
 2. Selects the exact configured public port or the existing automatic policy.
 3. Resolves the OpenCode executable through the bounded subprocess runner.
-4. Launches the backend, captures immutable identity, and proves its listener.
-5. Publishes pending metadata before later failure can orphan a role.
-6. Requires transport-appropriate authenticated health.
-7. Publishes complete state only after all role, listener, health, and lock checks
+4. Publishes a role-specific launch intent before spawning the process.
+5. Launches the backend, captures immutable identity, and transfers authority to
+   pending metadata before proving its listener.
+6. Repeats the launch-intent transfer for the TLS proxy when enabled.
+7. Requires transport-appropriate authenticated health.
+8. Publishes complete state only after all role, listener, health, and lock checks
    succeed.
 
 ### TLS Startup
@@ -480,8 +491,8 @@ Required coverage includes:
 3. Restart Neovim. If rollback verification is required, start a TLS generation
    and verify HTTPS, CA identity, both process roles, and authenticated health.
 4. Stop that verified TLS generation again with the schema-3 implementation.
-5. Confirm no live managed role and no complete or pending schema-3 metadata
-   remain.
+5. Confirm no live managed role, unresolved `launch.json` intent, or complete or
+   pending schema-3 metadata remains.
 6. Only then downgrade MkChad. Older code must never be asked to adopt, remove,
    or coexist with live schema-3 state.
 7. Preserve TLS material and logs for diagnosis; never expose config or password
