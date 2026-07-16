@@ -14,6 +14,8 @@
   "permission": {
     "external_directory": {
       "*": "deny",
+      "~/.config/opencode": "allow",
+      "~/.config/opencode/opencode.json*": "allow",
       "~/.config/mkchad": "allow",
       "~/.config/mkchad/**": "allow",
       "/data1/matthew/Projects/opencode.nvim": "allow",
