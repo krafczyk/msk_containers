@@ -6,7 +6,7 @@ RUN dnf update -y && \
     dnf install -y wget git gcc gcc-c++ \
     make cmake zsh python3 python3-devel \
     python3-pip python3-virtualenv \
-    rust cargo \
+    rust cargo luarocks \
     zip unzip tar gettext curl jq \
     java-21-openjdk-devel \
     java-21-openjdk-jmods \
@@ -18,12 +18,18 @@ RUN dnf update -y && \
     libstdc++-static \
     libvterm libvterm-devel \
     msgpack msgpack-devel \
-    clangd redhat-rpm-config libffi-devel \
+    clang clangd redhat-rpm-config libffi-devel \
     openssl-devel && \
     dnf clean all
 
 # Generate the locales
 RUN localedef -i en_US -f UTF-8 en_US.UTF-8
+
+ARG STYLUA_VERSION=2.5.2
+ARG LUACHECK_VERSION=1.2.0-1
+RUN cargo install --locked --root /usr --version "${STYLUA_VERSION}" \
+      --features luajit stylua && \
+    luarocks install luacheck "${LUACHECK_VERSION}"
 
 # Install needed python packages
 RUN pip3 install --prefix /usr \

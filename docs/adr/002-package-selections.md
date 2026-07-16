@@ -16,8 +16,7 @@ is present, which architecture receives it, or whether a new package duplicates
 an existing capability.
 
 This ADR records every package or software component selected directly by the
-Neovim Dockerfiles and the additional Lua/browser packages accepted for the
-next image update. It does not enumerate transitive RPM, pip, LuaRock, npm, or
+Neovim Dockerfiles. It does not enumerate transitive RPM, pip, LuaRock, npm, or
 source-build dependencies because those are resolved by external package
 managers and can change without a direct repository decision.
 
@@ -52,7 +51,7 @@ Fedora package names, but DNF may satisfy an executable capability such as
 | --- | --- | --- |
 | `git` | All | Clones Neovim, LuaJIT, Lua Language Server, JDTLS, and source-installed Python packages; also supports normal development workflows. |
 | `wget`, `curl` | All | Download source archives and metadata. `curl` is used directly by the Dockerfiles; `wget` remains available for interactive development and upstream installers. |
-| `gcc`, `gcc-c++` | All | Compile C and C++ dependencies, LuaJIT, Neovim, native Python extensions, and other source packages. |
+| `gcc`, `gcc-c++`, `clang` | All | Compile C and C++ dependencies, LuaJIT, Neovim, native Python extensions, and other source packages. Clang also satisfies the `CC=clang` runtime selection in each container definition. |
 | `make`, `cmake`, `ninja-build` | All | Provide the build systems used by LuaJIT, Neovim, Lua Language Server, and native dependencies. |
 | `libstdc++-static` | All | Supplies static C++ runtime objects required by source builds that produce self-contained tooling. |
 | `redhat-rpm-config` | All | Supplies Fedora compiler and linker configuration expected when building native Python and RPM-oriented source packages. |
@@ -71,6 +70,8 @@ Fedora package names, but DNF may satisfy an executable capability such as
 | `gh` | x86 | Supplies the GitHub CLI used by repository and future Sprint Loop CI workflows in the primary image. |
 | `pgrep`, `procps-ng` | x86 | Supply process discovery and process-inspection commands used by server lifecycle and diagnostic workflows. `pgrep` is an executable capability provided by `procps-ng`, so the two DNF operands are redundant but recorded as written. |
 | `iproute`, `lsof` | x86 | Supply network/interface and open-file diagnostics for local OpenCode server troubleshooting. |
+| `openssh-clients` | x86 | Supplies `ssh` for browser and server verification that reaches a remote service through an explicit SSH tunnel. |
+| `xdg-utils` | x86 | Supplies `xdg-open`, the default Linux URL-handler interface used by Neovim's `vim.ui.open()` path. |
 
 The x86-only diagnostic selections reflect the current primary development
 image. They are not a claim that the secondary images have equivalent lifecycle
@@ -105,6 +106,7 @@ The Dockerfiles directly install these Python packages with pip:
 | `jedi` | All | Unpinned | Provides Python completion and static-analysis support. |
 | `pynvim` | All | Unpinned | Provides the Python client and remote-plugin integration for Neovim. |
 | `python-lsp-server[all]` | All | Unpinned, including its `all` extra | Provides a Python language server and its complete optional analysis, formatting, and linting feature set. |
+| `selenium` | x86 | Pinned to `4.46.0` | Provides Python WebDriver browser automation against the version-aligned Fedora ChromeDriver. |
 
 The broad and floating pip selections favor a batteries-included interactive
 environment over a minimal or fully reproducible Python dependency closure.
@@ -166,12 +168,17 @@ revision is identified.
 | `xclip` | x86 | Integrates Neovim with X11 clipboard commands in the primary image. |
 | `xsel` | ARM, PPC | Provides the equivalent X11 clipboard integration selected for the secondary images. |
 
-Each container definition currently sets `CC=clang`, but the Dockerfiles select
-only the `clangd` capability. Fedora satisfies that capability with
-`clang-tools-extra`, which does not provide the `clang` compiler. The `CC`
-selection is therefore currently unsatisfied. A future change must either add
-the `clang` package or select an installed compiler such as GCC and update this
-ADR in the same change.
+## Lua Verification Tooling
+
+| Tool | Architectures | Version policy | Reason |
+| --- | --- | --- | --- |
+| LuaRocks | All | Fedora base version | Installs and manages Luacheck and its Lua dependencies. |
+| StyLua | All | Cargo crate pinned to `2.5.2` with `--locked` | Provides deterministic Lua formatting and `stylua --check`. The `luajit` feature accepts Neovim's LuaJIT syntax, and source compilation avoids architecture-specific binary availability. |
+| Luacheck | All | LuaRock pinned to `1.2.0-1` | Detects undefined globals, unused values, and other Lua defects not covered by formatting. |
+
+StyLua and Luacheck still require repository-owned configuration and documented
+check commands. Installing them does not define a formatting or lint policy for
+every Lua repository.
 
 ## Source-Built Neovim Stack
 
@@ -186,48 +193,46 @@ rather than selected as Fedora packages.
 | Lua Language Server | x86 | Tag `3.17.1` | Provides Lua diagnostics, completion, and language intelligence. |
 | Lua Language Server | ARM, PPC | Tag `3.15.0` | Provides the currently selected secondary-architecture Lua language tooling. ARM uses a modified build sequence because its upstream tests fail under the cross-build environment. |
 
-## Accepted Additions
+## Browser and Browser-Automation Tooling
 
-The following selections are accepted by this ADR but are not yet present in
-the Dockerfiles. The image update that installs them must preserve the version
-and scope decisions below or update this ADR.
+Browser tooling is installed only in the x86 image. That image has Neovim 0.12
+and Node.js 22, while the secondary images currently have Neovim 0.11 and Node.js
+20. Current Playwright support requires Node.js 22 or newer, and Puppeteer
+`25.3.0` requires Node.js `22.12.0` or newer. The browser stack must not be
+presented as ARM or PPC compatible until those baselines are upgraded and tested.
 
-| Tool | Installation source | Version policy | Initial scope | Reason |
-| --- | --- | --- | --- | --- |
-| StyLua | Cargo crate `stylua` | Pin `2.5.2` and install with `--locked` | All | Provides deterministic Lua formatting and `stylua --check`. Building with the existing Cargo toolchain avoids architecture-specific release binaries. |
-| LuaRocks | Fedora package `luarocks` | Fedora base version | All | Installs and manages the selected Lua linter and its Lua dependencies. |
-| Luacheck | LuaRock `luacheck` | Pin `1.2.0-1` | All | Detects undefined globals, unused values, and other Lua defects not covered by formatting. |
-| `xdg-utils` | Fedora package | Fedora base version | x86 initially | Provides `xdg-open`, the Linux URL-handler interface used by Neovim's default `vim.ui.open()` path. |
-| Chromium | Fedora package `chromium` | Fedora security-update stream | x86 initially | Provides an interactive browser for operator-driven OpenCode session-opening verification. |
-| NSS tools | Fedora package `nss-tools` | Fedora base version | x86 initially | Provides `certutil` for an isolated NSS certificate database used to prepare and verify private-CA browser trust. |
+| Package or component | Version policy | Reason |
+| --- | --- | --- |
+| `chromium` | Fedora 43 security-update stream | Provides the interactive system browser and `/usr/bin/chromium-browser` for Neovim, Puppeteer, and direct browser tests. |
+| `chromium-headless` | Same Fedora build as Chromium | Provides the minimal `/usr/lib64/chromium-browser/headless_shell` binary for dedicated headless-shell tests. |
+| `chromedriver` | Same Fedora build as Chromium | Provides `/usr/bin/chromedriver` for Selenium and other WebDriver clients without a browser/driver version mismatch. |
+| `xorg-x11-server-Xvfb` | Fedora base version | Provides a virtual X server for headed browser behavior in an environment without a physical display. |
+| `google-noto-sans-fonts` | Fedora base version | Provides a deterministic general-purpose browser font for rendering and screenshot tests. |
+| `google-noto-color-emoji-fonts` | Fedora base version | Provides deterministic color emoji rendering. |
+| `nss-tools` | Fedora base version | Provides `certutil` for isolated NSS certificate databases used in private-CA browser tests. |
+| `@playwright/test` | npm package pinned to `1.61.1` | Provides Playwright, its test runner, assertions, browser contexts, tracing, and command-line tooling. |
+| `puppeteer` | npm package pinned to `25.3.0` | Provides Chrome DevTools Protocol and WebDriver BiDi automation for scripts that use the Puppeteer API. |
+| Playwright Chrome for Testing | Managed by Playwright `1.61.1` under `/opt/msk/playwright-browsers` | Gives Playwright its tested full-browser revision instead of assuming compatibility with Fedora Chromium. |
+| Playwright Chromium headless shell | Managed by Playwright `1.61.1` under `/opt/msk/playwright-browsers` | Supplies the browser revision used by Playwright's default headless Chromium mode. |
+| Playwright ffmpeg | Managed by Playwright `1.61.1` under `/opt/msk/playwright-browsers` | Supports Playwright video recording and related media artifacts. |
 
-StyLua and Luacheck require repository-owned configuration and documented check
-commands. Installing them does not itself define a formatting or lint policy.
+The two npm automation packages are installed under
+`/opt/msk/browser-tools/node_modules`. A root-level `/node_modules` symlink makes
+them resolvable by ordinary CommonJS and ES module imports from projects at any
+workspace path, while `/usr/bin/playwright` and `/usr/bin/puppeteer` expose their
+CLIs. The exact direct versions are saved in the generated package metadata.
 
-`xdg-utils` supplies URL dispatch but not a browser. Chromium is therefore
-selected as well for a self-contained x86 image. Installing `nss-tools` does not
-trust a certificate automatically; private-CA tests must import a disposable CA
-into an isolated profile and must not disable certificate verification.
+Playwright installs its Chromium family payload but not Playwright Firefox or
+WebKit. Puppeteer is configured with `PUPPETEER_EXECUTABLE_PATH` to use Fedora
+Chromium and skips its separate Chrome-for-Testing download. Selenium uses
+Fedora ChromeDriver and Chromium. These choices provide all three automation
+APIs while avoiding additional Puppeteer and Selenium browser downloads.
 
-Browser package availability and runtime behavior must be proven before these
-browser selections are extended to aarch64 or ppc64le.
-
-## Packages Not Selected
-
-- Playwright and Puppeteer are not selected because no browser-automation suite
-  currently exists, their downloaded browser model is a poor fit for Fedora and
-  ppc64le, and they duplicate the selected system browser.
-- Selenium and `chromedriver` are not selected because WebDriver is unnecessary
-  for the current operator-driven browser demonstration.
-- `chromium-headless` is not selected because it does not satisfy the current
-  interactive demonstration and would duplicate Chromium.
-- Xvfb is not selected because no headed browser automation is being run without
-  a display.
-- Selene is not selected because it would duplicate Luacheck without satisfying
-  the selected Luacheck verification command.
-- A second Lua runtime is not selected for linting. LuaRocks and Luacheck should
-  use the image's compatible Lua environment rather than introducing a separate
-  project runtime without a demonstrated need.
+Installing `nss-tools` does not trust a certificate automatically. Private-CA
+tests must import a disposable CA into an isolated profile and must not disable
+certificate verification. Browser tests must likewise use disposable writable
+profiles and artifact directories rather than modifying the operator's normal
+browser state.
 
 ## Consequences
 
@@ -239,8 +244,9 @@ browser selections are extended to aarch64 or ppc64le.
   visible; a successful x86 build does not prove parity on ARM or PPC.
 - The x86 image is the only current architecture that satisfies Neovim 0.12
   requirements.
-- Chromium will materially increase image size and the frequency of
-  security-driven rebuilds.
+- Chromium, Chromium Headless, browser drivers, and Playwright's browser/media
+  payloads materially increase image size and the frequency of security-driven
+  rebuilds.
 - Several current pip and source selections float. Builds are not fully
   reproducible until those inputs and the Rawhide bases are pinned.
 - `python-lsp-server[all]` installs a large transitive Python feature set that is
@@ -280,6 +286,13 @@ Not selected as the baseline because it leaves URL-opener and browser
 availability outside the image. Explicit and verified host-browser integration
 remains acceptable for deployments that do not want Chromium in the image.
 
+### Use One Browser Automation API
+
+Rejected for this development image. Playwright, Puppeteer, and Selenium cover
+different project ecosystems and test contracts. They share the Fedora browser
+where compatibility permits, while Playwright retains its own tested Chromium
+revision.
+
 ## References
 
 - `nvim/x86/nvim_container_x86.dockerfile`
@@ -295,3 +308,8 @@ remains acceptable for deployments that do not want Chromium in the image.
 - [Fedora xdg-utils package](https://packages.fedoraproject.org/pkgs/xdg-utils/xdg-utils/)
 - [Fedora Chromium package](https://packages.fedoraproject.org/pkgs/chromium/chromium/)
 - [Fedora nss-tools package](https://packages.fedoraproject.org/pkgs/nss/nss-tools/)
+- [Fedora Xvfb package](https://packages.fedoraproject.org/pkgs/xorg-x11-server/xorg-x11-server-Xvfb/)
+- [Fedora OpenSSH clients package](https://packages.fedoraproject.org/pkgs/openssh/openssh-clients/)
+- [Playwright installation and requirements](https://playwright.dev/docs/intro)
+- [Puppeteer supported browsers](https://pptr.dev/supported-browsers)
+- [Selenium package](https://pypi.org/project/selenium/4.46.0/)

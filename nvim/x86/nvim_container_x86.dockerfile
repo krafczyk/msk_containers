@@ -1,4 +1,4 @@
-# Use Fedora Rawhide for x86 as the base image
+# Use Fedora 43 for x86 as the base image
 FROM quay.io/fedora/fedora:43@sha256:a08659cad3f9c8279e70bea1feee02162a1751bda3103c55ba437707fa8efeca AS nvim_container_base
 
 # Update and install essential packages
@@ -6,12 +6,15 @@ RUN dnf update -y && \
     dnf install -y wget git gcc gcc-c++ \
     make cmake zsh python3 python3-devel \
     python3-pip python3-virtualenv \
-    rust cargo gh \
+    rust cargo luarocks gh \
     zip unzip tar gettext curl jq \
     java-21-openjdk-devel \
     java-21-openjdk-jmods \
     maven xclip which ripgrep pgrep \
-    procps-ng iproute lsof \
+    procps-ng iproute lsof openssh-clients \
+    xdg-utils chromium chromium-headless chromedriver \
+    nss-tools xorg-x11-server-Xvfb \
+    google-noto-sans-fonts google-noto-color-emoji-fonts \
     glibc-locale-source \
     glibc-langpack-en \
     glibc-gconv-extra \
@@ -19,17 +22,23 @@ RUN dnf update -y && \
     libstdc++-static \
     libvterm libvterm-devel \
     msgpack msgpack-devel \
-    clangd redhat-rpm-config libffi-devel \
+    clang clangd redhat-rpm-config libffi-devel \
     openssl-devel && \
     dnf clean all
 
 # Generate the locales
 RUN localedef -i en_US -f UTF-8 en_US.UTF-8
 
+ARG STYLUA_VERSION=2.5.2
+ARG LUACHECK_VERSION=1.2.0-1
+RUN cargo install --locked --root /usr --version "${STYLUA_VERSION}" \
+      --features luajit stylua && \
+    luarocks install luacheck "${LUACHECK_VERSION}"
+
 # Install needed python packages
 RUN pip3 install --prefix /usr \
     "git+https://github.com/pydantic/pydantic@main#egg=pydantic" \
-    openai jedi pynvim python-lsp-server[all]
+    openai jedi pynvim python-lsp-server[all] selenium==4.46.0
 
 ENV NODE_VER=22.22.3
 ENV MSK_CONTAINER_ARCH=x86_64
@@ -110,4 +119,17 @@ ENV PATH="/nvim/lua-language-server/bin:$PATH"
 # Baseline tools make a fresh MkChad launch work before a user-managed runtime
 # update has been installed.  The latter takes precedence when mounted.
 ARG OPENCODE_VERSION=1.17.20
-RUN npm install -g basedpyright "opencode-ai@${OPENCODE_VERSION}"
+ARG PLAYWRIGHT_VERSION=1.61.1
+ARG PUPPETEER_VERSION=25.3.0
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/msk/playwright-browsers
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+RUN npm install -g basedpyright \
+      "opencode-ai@${OPENCODE_VERSION}" && \
+    npm install --prefix /opt/msk/browser-tools --save-exact \
+      "@playwright/test@${PLAYWRIGHT_VERSION}" \
+      "puppeteer@${PUPPETEER_VERSION}" && \
+    ln -s /opt/msk/browser-tools/node_modules /node_modules && \
+    ln -s /opt/msk/browser-tools/node_modules/.bin/playwright /usr/bin/playwright && \
+    ln -s /opt/msk/browser-tools/node_modules/.bin/puppeteer /usr/bin/puppeteer && \
+    playwright install chromium
