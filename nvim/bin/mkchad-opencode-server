@@ -23,7 +23,17 @@ die() {
 [[ -f $entrypoint ]] || die "installed MkChad lifecycle entrypoint is missing: $entrypoint"
 [[ -r $entrypoint ]] || die "installed MkChad lifecycle entrypoint is not readable: $entrypoint"
 
-if [[ ${MKCHAD_NVIM_CONTAINER:-} == 1 ]]; then
+container_signal=${SINGULARITY_CONTAINER:-${APPTAINER_CONTAINER:-}}
+if [[ -n $container_signal && ( ${MKCHAD_NVIM_IMAGE:-} == 1 || ${container_signal##*/} == neovim.sif ) ]]; then
+  # New images and the MkChad launcher set MKCHAD_NVIM_IMAGE.  The standard
+  # runtime image name retains compatibility with an already running MkChad
+  # image launched before that marker existed.  Do not trust the legacy marker
+  # by itself to select a host nvim binary from an ordinary shell.
+  export NVIM_APPNAME=mkchad
+  export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-$runtime_dir}"
+  export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$cache_dir}"
+  export MSK_NPM_GLOBAL_BASE="${MSK_NPM_GLOBAL_BASE:-$npm_container_base}"
+  export OPENCODE_CONFIG="${OPENCODE_CONFIG:-$opencode_config}"
   command -v nvim >/dev/null 2>&1 || die "container Neovim is unavailable"
   exec nvim -u NONE -l "$entrypoint" -- "$@"
 fi
@@ -43,7 +53,7 @@ image=${NVIM_CONT_LOCATION:-"$container_dir/neovim.sif"}
 mkdir -p -- "$runtime_dir" "$cache_dir" "$npm_base"
 
 exec "$runtime" exec \
-  --env "MKCHAD_NVIM_CONTAINER=1" \
+  --env "MKCHAD_NVIM_IMAGE=1" \
   --env "NVIM_APPNAME=mkchad" \
   --env "XDG_RUNTIME_DIR=$runtime_dir" \
   --env "XDG_CACHE_HOME=$cache_dir" \

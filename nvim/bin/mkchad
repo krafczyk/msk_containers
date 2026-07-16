@@ -18,6 +18,7 @@ mkdir -p "$mkchad_runtime_dir" "$mkchad_cache_dir" "$msk_npm_global_base"
 # Launch Singularity
 "$script_dir/ct_exec.sh" "--$TOOL" \
   --env "NVIM_APPNAME=mkchad" \
+  --env "MKCHAD_NVIM_IMAGE=1" \
   --env "XDG_RUNTIME_DIR=$mkchad_runtime_dir" \
   --env "XDG_CACHE_HOME=$mkchad_cache_dir" \
   --ct-bind "$msk_npm_global_base:$msk_npm_container_base" \
