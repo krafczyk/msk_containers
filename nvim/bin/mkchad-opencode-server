@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+# Run the reviewed MkChad lifecycle in the active Neovim image without loading
+# MkChad itself.  Keep all diagnostics on stderr: --json is a strict command
+# protocol consumed by the editor adapter.
+set -euo pipefail
+
+program=${0##*/}
+config_home=${XDG_CONFIG_HOME:-"$HOME/.config"}
+config_root="$config_home/mkchad"
+entrypoint="$config_root/lua/mkchad/opencode/command.lua"
+runtime_dir=${XDG_RUNTIME_DIR:-"$HOME/.local/share/mkchad/tmp"}
+cache_dir=${XDG_CACHE_HOME:-"$HOME/.local/cache"}
+npm_base=${XDG_DATA_HOME:-"$HOME/.local/share"}/msk_containers/npm-global
+npm_container_base=/opt/msk/npm-global
+opencode_config="$config_root/opencode.jsonc"
+
+die() {
+  printf '%s: %s\n' "$program" "$*" >&2
+  exit "${2:-1}"
+}
+
+[[ -f $entrypoint ]] || die "installed MkChad lifecycle entrypoint is missing: $entrypoint"
+[[ -r $entrypoint ]] || die "installed MkChad lifecycle entrypoint is not readable: $entrypoint"
+
+if [[ ${MKCHAD_NVIM_CONTAINER:-} == 1 ]]; then
+  command -v nvim >/dev/null 2>&1 || die "container Neovim is unavailable"
+  exec nvim -u NONE -l "$entrypoint" -- "$@"
+fi
+
+if command -v apptainer >/dev/null 2>&1; then
+  runtime=apptainer
+elif command -v singularity >/dev/null 2>&1; then
+  runtime=singularity
+else
+  die "neither Apptainer nor SingularityCE is available"
+fi
+
+container_dir=${NVIM_CONTAINER_DIR:-"$HOME/containers"}
+image=${NVIM_CONT_LOCATION:-"$container_dir/neovim.sif"}
+[[ -f $image ]] || die "active Neovim image is missing: $image"
+
+mkdir -p -- "$runtime_dir" "$cache_dir" "$npm_base"
+
+exec "$runtime" exec \
+  --env "MKCHAD_NVIM_CONTAINER=1" \
+  --env "NVIM_APPNAME=mkchad" \
+  --env "XDG_RUNTIME_DIR=$runtime_dir" \
+  --env "XDG_CACHE_HOME=$cache_dir" \
+  --env "MSK_NPM_GLOBAL_BASE=$npm_container_base" \
+  --env "OPENCODE_CONFIG=$opencode_config" \
+  --bind "$npm_base:$npm_container_base" \
+  "$image" nvim -u NONE -l "$entrypoint" -- "$@"

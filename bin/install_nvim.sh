@@ -11,6 +11,7 @@ files=(
   "$bin_dir/nvim_shell"
   "$bin_dir/nvim_clear_data"
   "$bin_dir/mkchad"
+  "$bin_dir/mkchad-opencode-server"
   "$bin_dir/install_nvim_container"
 )
 
