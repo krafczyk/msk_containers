@@ -3,12 +3,16 @@
   "instructions": ["AGENTS.md"],
   "references": {
     "mkchad": {
-      "path": "~/.config/mkchad",
-      "description": "MkChad configuration repository for the shared OpenCode server sprint"
+      "path": "../mkchad",
+      "description": "MkChad configuration child repository for the shared OpenCode server sprint"
     },
     "opencode-nvim": {
-      "path": "/data1/matthew/Projects/opencode.nvim",
+      "path": "../opencode.nvim",
       "description": "Custom opencode.nvim fork used by MkChad"
+    },
+    "sprint-docs": {
+      "path": "../docs/sprints/single-opencode-server",
+      "description": "Parent-workspace plans and governing documents for the single OpenCode server sprint series"
     }
   },
   "permission": {
@@ -16,12 +20,14 @@
       "*": "deny",
       "~/.config/opencode": "allow",
       "~/.config/opencode/opencode.json*": "allow",
-      "~/.config/mkchad": "allow",
-      "~/.config/mkchad/**": "allow",
-      "/data1/matthew/Projects/opencode.nvim": "allow",
-      "/data1/matthew/Projects/opencode.nvim/**": "allow",
-      "/tmp/opencode": "allow",
-      "/tmp/opencode/**": "allow",
+      "/data0/matthew/Projects/mkchad/mkchad": "allow",
+      "/data0/matthew/Projects/mkchad/mkchad/**": "allow",
+      "/data0/matthew/Projects/mkchad/opencode.nvim": "allow",
+      "/data0/matthew/Projects/mkchad/opencode.nvim/**": "allow",
+      "/data0/matthew/Projects/mkchad/docs/sprints/single-opencode-server": "allow",
+      "/data0/matthew/Projects/mkchad/docs/sprints/single-opencode-server/**": "allow",
+      "/tmp/opencode-mkchad": "allow",
+      "/tmp/opencode-mkchad/**": "allow",
       "~/.local/share/msk_containers/npm-global": "allow",
       "~/.local/share/msk_containers/npm-global/**": "allow",
       "~/.local/state/mkchad/opencode": "allow",
