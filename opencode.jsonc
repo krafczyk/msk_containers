@@ -14,35 +14,5 @@
       "path": "../docs/sprints/single-opencode-server",
       "description": "Parent-workspace plans and governing documents for the single OpenCode server sprint series"
     }
-  },
-  "permission": {
-    "external_directory": {
-      "*": "deny",
-      "~/.config/opencode": "allow",
-      "~/.config/opencode/opencode.json*": "allow",
-      "/data0/matthew/Projects/mkchad/mkchad": "allow",
-      "/data0/matthew/Projects/mkchad/mkchad/**": "allow",
-      "/data0/matthew/Projects/mkchad/opencode.nvim": "allow",
-      "/data0/matthew/Projects/mkchad/opencode.nvim/**": "allow",
-      "/data0/matthew/Projects/mkchad/docs/sprints/single-opencode-server": "allow",
-      "/data0/matthew/Projects/mkchad/docs/sprints/single-opencode-server/**": "allow",
-      "/tmp/opencode-mkchad": "allow",
-      "/tmp/opencode-mkchad/**": "allow",
-      "~/.local/share/msk_containers/npm-global": "allow",
-      "~/.local/share/msk_containers/npm-global/**": "allow",
-      "~/.local/state/mkchad/opencode": "allow",
-      "~/.local/state/mkchad/opencode/**": "allow",
-      "~/.local/share/mkchad/tmp": "allow",
-      "~/.local/share/mkchad/tmp/**": "allow",
-      "~/.local/cache/mkchad": "allow",
-      "~/.local/cache/mkchad/**": "allow",
-      "~/.local/share/mkchad/lazy/opencode.nvim": "allow",
-      "~/.local/share/mkchad/lazy/opencode.nvim/**": "allow",
-      "~/.local/bin/mkchad": "allow",
-      "~/.local/bin/nvim_library.sh": "allow",
-      "~/.local/bin/ct_*.sh": "allow",
-      "~/containers/neovim*.sif": "allow",
-      "~/.config/ct_mount.conf": "allow"
-    }
   }
 }
