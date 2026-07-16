@@ -45,6 +45,16 @@ Repository responsibilities:
 - `mkchad`: shared-server lifecycle and Neovim configuration integration.
 - `opencode.nvim`: directory routing and lifecycle-hook implementation.
 
+## Package Selection Documentation
+
+Update `docs/adr/002-package-selections.md` in the same change whenever a
+directly selected container package or software component is added, removed,
+upgraded, downgraded, moved to a different installation source, or given a
+different architecture scope. This includes DNF, pip, npm, Cargo, and LuaRocks
+packages as well as downloaded or source-built runtimes and tools. Transitive
+dependency-only changes do not require an ADR update unless the repository
+begins selecting that dependency directly.
+
 ## MkChad Live Config Protection
 
 `/home/matthew/.config/mkchad` is the user's live, working Neovim configuration.
