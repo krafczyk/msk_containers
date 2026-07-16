@@ -23,6 +23,10 @@ Install and activate a transported Neovim SIF image. Managed image names use:
 
   neovim_VERSION_gGITREV_DIGEST_ARCH.sif
 
+Raw build images named nvim_container_{x86,aarch64,ppc64le}.sif are assigned a
+managed name automatically. VERSION comes from the image, GITREV from the HEAD
+of the checkout containing the image, and DIGEST from the image's SHA-256.
+
 Options:
   --install-dir PATH  Container directory (default: ~/containers)
   --keep NUMBER       Installed image slots to retain (default: 2)
@@ -78,9 +82,8 @@ image_runtime() {
   fi
 }
 
-verify_image() {
+image_version() {
   local image=$1
-  local expected_version=${2:-}
   local runtime output first_line
 
   runtime=$(image_runtime)
@@ -90,8 +93,17 @@ verify_image() {
   fi
   first_line=${output%%$'\n'*}
   [[ $first_line == "NVIM v"* ]] || die "unexpected Neovim version output: $first_line"
-  if [[ -n $expected_version && $first_line != "NVIM v${expected_version}" ]]; then
-    die "image reports $first_line, expected Neovim v${expected_version}"
+  printf '%s\n' "${first_line#NVIM v}"
+}
+
+verify_image() {
+  local image=$1
+  local expected_version=${2:-}
+  local actual_version
+
+  actual_version=$(image_version "$image")
+  if [[ -n $expected_version && $actual_version != "$expected_version" ]]; then
+    die "image reports NVIM v${actual_version}, expected Neovim v${expected_version}"
   fi
 }
 
@@ -292,18 +304,25 @@ fi
 [[ -f $source_image ]] || die "image does not exist: $source_image"
 source_image=$(realpath -- "$source_image")
 artifact_name=${source_image##*/}
-if [[ ! $artifact_name =~ ^neovim_([0-9]+\.[0-9]+\.[0-9]+)_g([0-9a-fA-F]{7,40})_([0-9a-fA-F]{8,64})_(x86|x86_64|aarch64|ppc64le)\.sif$ ]]; then
-  die "invalid managed image name: $artifact_name"
+raw_image=0
+if [[ $artifact_name =~ ^neovim_([0-9]+\.[0-9]+\.[0-9]+)_g([0-9a-fA-F]{7,40})_([0-9a-fA-F]{8,64})_(x86|x86_64|aarch64|ppc64le)\.sif$ ]]; then
+  expected_version=${BASH_REMATCH[1]}
+  name_digest=${BASH_REMATCH[3],,}
+  image_arch=$(normalize_arch "${BASH_REMATCH[4]}")
+elif [[ $artifact_name =~ ^nvim_container_(x86|aarch64|ppc64le)\.sif$ ]]; then
+  raw_image=1
+  image_arch=$(normalize_arch "${BASH_REMATCH[1]}")
+else
+  die "invalid image name: $artifact_name"
 fi
-expected_version=${BASH_REMATCH[1]}
-name_digest=${BASH_REMATCH[3],,}
-image_arch=$(normalize_arch "${BASH_REMATCH[4]}")
 host_arch=$(normalize_arch "$(uname -m)")
 [[ $image_arch == "$host_arch" ]] || die "image architecture $image_arch does not match host architecture $host_arch"
 
 source_digest=$(sha256sum -- "$source_image")
 source_digest=${source_digest%% *}
-[[ $source_digest == "$name_digest"* ]] || die "filename digest does not match image SHA-256"
+if (( ! raw_image )); then
+  [[ $source_digest == "$name_digest"* ]] || die "filename digest does not match image SHA-256"
+fi
 
 checksum_file="${source_image}.sha256"
 if [[ -f $checksum_file ]]; then
@@ -314,7 +333,21 @@ if [[ -f $checksum_file ]]; then
   [[ $source_digest == "$expected_digest" ]] || die "checksum verification failed: $source_image"
 fi
 
-verify_image "$source_image" "$expected_version"
+if (( raw_image )); then
+  image_dir=${source_image%/*}
+  if ! revision=$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY \
+    -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_INDEX_FILE -u GIT_NAMESPACE \
+    git -C "$image_dir" rev-parse --verify 'HEAD^{commit}' 2>/dev/null); then
+    die "cannot determine repository revision for raw build image: $source_image"
+  fi
+  revision=${revision,,}
+  [[ $revision =~ ^[0-9a-f]{7,40}$ ]] || die "invalid repository revision for raw build image: $revision"
+  expected_version=$(image_version "$source_image")
+  [[ $expected_version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "image reports unsupported Neovim version: NVIM v${expected_version}"
+  artifact_name="neovim_${expected_version}_g${revision}_${source_digest}_${image_arch}.sif"
+else
+  verify_image "$source_image" "$expected_version"
+fi
 destination="${install_dir}/$artifact_name"
 
 if (( dry_run )); then
