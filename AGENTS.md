@@ -2,13 +2,25 @@
 
 ## Sprint Coordination
 
-The parent MkChad development workspace is the coordination root for the
-optional OpenCode transport sprint. The governing documents are:
+The parent MkChad development workspace at
+`/data0/matthew/Projects/mkchad` owns sprint selection and cross-repository
+sprint documents. Read its `AGENTS.md` before sprint work. Do not infer a
+current sprint from this repository, directory ordering, or unchecked tracker
+items.
 
+This repository currently participates in the parent selector
+`single-opencode-server/2`. Its governing documents are:
+
+- `../docs/sprints/single-opencode-server/sprint_plan.md`
 - `../docs/sprints/single-opencode-server/2/sprint_spec.md`
 - `../docs/sprints/single-opencode-server/2/sprint_checklist.md`
 - `../docs/sprints/single-opencode-server/2/threat_model.md`
 - `../docs/sprints/single-opencode-server/2/audit_policy.md`
+
+If sprint work is requested from this child without an explicit parent-resolved
+selector, return to the parent coordination root or ask the user to select one.
+Normal repository work does not require a sprint selection. Keep a resolved
+selector fixed for the full Builder/Auditor invocation.
 
 The superseded TLS-only implementation baseline is archived under
 `../docs/sprints/single-opencode-server/1/`. Archived sprint documents are
@@ -28,7 +40,8 @@ its own `AGENTS.md` if present.
 
 Repository responsibilities:
 
-- `msk_containers`: sprint documents, container integration, and evidence.
+- Parent workspace: sprint plans, specifications, checklists, and policies.
+- `msk_containers`: container integration and verification evidence.
 - `mkchad`: shared-server lifecycle and Neovim configuration integration.
 - `opencode.nvim`: directory routing and lifecycle-hook implementation.
 
@@ -49,9 +62,9 @@ the live checkout as a convenient fallback when submodule setup or tests fail.
 
 ## Runtime Paths
 
-Runtime paths in `opencode.jsonc` are available for focused verification. Treat
-them as read-only unless a sprint test explicitly requires mutation. In
-particular, do not inspect unrelated OpenCode session data or credential paths.
+Treat live runtime paths as read-only unless the selected sprint explicitly
+requires focused mutation. In particular, do not inspect unrelated OpenCode
+session data or credential paths.
 
 Create every temporary directory beneath `/tmp/opencode-mkchad`, for example
 `/tmp/opencode-mkchad/<purpose>`. Do not create temporary directories directly
