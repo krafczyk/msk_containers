@@ -11,7 +11,8 @@ RUN dnf update -y && \
     java-21-openjdk-devel \
     java-21-openjdk-jmods \
     maven xclip which ripgrep pgrep \
-    procps-ng iproute lsof openssh-clients \
+    time hyperfine strace perf \
+    procps-ng iproute lsof sqlite openssh-clients \
     xdg-utils chromium chromium-headless chromedriver \
     nss-tools xorg-x11-server-Xvfb \
     google-noto-sans-fonts google-noto-color-emoji-fonts \
@@ -23,7 +24,7 @@ RUN dnf update -y && \
     libvterm libvterm-devel \
     msgpack msgpack-devel \
     clang clangd redhat-rpm-config libffi-devel \
-    openssl-devel && \
+    openssl-devel memray && \
     dnf clean all
 
 # Generate the locales
@@ -38,7 +39,8 @@ RUN cargo install --locked --root /usr --version "${STYLUA_VERSION}" \
 # Install needed python packages
 RUN pip3 install --prefix /usr \
     "git+https://github.com/pydantic/pydantic@main#egg=pydantic" \
-    openai jedi pynvim python-lsp-server[all] selenium==4.46.0
+    openai jedi pynvim python-lsp-server[all] selenium==4.46.0 \
+    py-spy
 
 ENV NODE_VER=22.22.3
 ENV MSK_CONTAINER_ARCH=x86_64

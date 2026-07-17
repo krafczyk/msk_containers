@@ -70,6 +70,11 @@ Fedora package names, but DNF may satisfy an executable capability such as
 | `gh` | x86 | Supplies the GitHub CLI used by repository and future Sprint Loop CI workflows in the primary image. |
 | `pgrep`, `procps-ng` | x86 | Supply process discovery and process-inspection commands used by server lifecycle and diagnostic workflows. `pgrep` is an executable capability provided by `procps-ng`, so the two DNF operands are redundant but recorded as written. |
 | `iproute`, `lsof` | x86 | Supply network/interface and open-file diagnostics for local OpenCode server troubleshooting. |
+| `time` | x86 | Supplies GNU `/usr/bin/time`, including verbose resource accounting with `-v`. |
+| `hyperfine` | x86 | Provides repeatable command-level benchmarks with warmup and statistical reporting. |
+| `strace` | x86 | Attributes startup, subprocess, filesystem, and other system-call behavior. Attaching to an existing process remains subject to the runtime's ptrace policy. |
+| `perf` | x86 | Provides Linux CPU sampling and hardware/software performance counters. Counter access remains subject to the host's `perf_event_paranoid` policy. |
+| `sqlite` | x86 | Supplies the SQLite CLI for database inspection, query-plan analysis, and index investigation. |
 | `openssh-clients` | x86 | Supplies `ssh` for browser and server verification that reaches a remote service through an explicit SSH tunnel. |
 | `xdg-utils` | x86 | Supplies `xdg-open`, the default Linux URL-handler interface used by Neovim's `vim.ui.open()` path. |
 
@@ -96,6 +101,7 @@ installed.
 | `python3-virtualenv` | All | Supports isolated project environments and clean-install verification. |
 | `libffi-devel` | All | Supplies FFI headers required by Python packages and native integrations. |
 | `openssl-devel` | All | Supplies TLS and cryptographic headers for native Python and service integrations. |
+| `memray` | x86 | Supplies Fedora's Memray CLI and Python allocation profiler for peak-memory and allocation analysis. |
 
 The Dockerfiles directly install these Python packages with pip:
 
@@ -107,6 +113,7 @@ The Dockerfiles directly install these Python packages with pip:
 | `pynvim` | All | Unpinned | Provides the Python client and remote-plugin integration for Neovim. |
 | `python-lsp-server[all]` | All | Unpinned, including its `all` extra | Provides a Python language server and its complete optional analysis, formatting, and linting feature set. |
 | `selenium` | x86 | Pinned to `4.46.0` | Provides Python WebDriver browser automation against the version-aligned Fedora ChromeDriver. |
+| `py-spy` | x86 | Unpinned | Provides low-overhead Python sampling. Attaching to an existing process remains subject to the runtime's ptrace policy and may require `SYS_PTRACE`. |
 
 The broad and floating pip selections favor a batteries-included interactive
 environment over a minimal or fully reproducible Python dependency closure.
@@ -252,6 +259,9 @@ browser state.
   reproducible until those inputs and the Rawhide bases are pinned.
 - `python-lsp-server[all]` installs a large transitive Python feature set that is
   intentionally not duplicated in this direct-selection inventory.
+- Profilers that inspect processes or kernel counters do not bypass host or
+  container security policy. Operators must explicitly grant ptrace access or
+  relax `perf_event_paranoid` when a profiling workflow requires it.
 - DNF, pip, npm, and LuaRocks continue to resolve transitive dependencies. Their
   resolved package lists should be captured as build artifacts when exact image
   provenance is required.
