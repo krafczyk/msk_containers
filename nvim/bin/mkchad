@@ -8,7 +8,7 @@ mkchad_runtime_dir="$HOME/.local/share/mkchad/tmp"
 mkchad_cache_dir="$HOME/.local/cache"
 # The common host-side parent is intentionally architecture-neutral.  Each
 # container selects its own architecture/Node-major subdirectory at runtime.
-msk_npm_global_base="${XDG_DATA_HOME:-$HOME/.local/share}/msk_containers/npm-global"
+msk_npm_global_base="$HOME/.local/share/msk_containers/npm-global"
 msk_npm_container_base="/opt/msk/npm-global"
 opencode_config="$HOME/.config/mkchad/opencode.jsonc"
 

@@ -132,12 +132,13 @@ baseline:
 | `opencode-ai` | All | `1.17.20` on x86 and ARM; `1.17.18` on PPC | Provides the OpenCode CLI/server used by MkChad. The explicit version prevents an uncontrolled latest-version change during image construction. |
 
 At runtime, MkChad bind-mounts an architecture-neutral writable npm parent at
-`/opt/msk/npm-global`. The container definitions intend to select an
-architecture- and Node-major-specific child and place it ahead of the immutable
-baseline. That selection currently does not occur because launcher `--env`
-values are applied after `%environment` is evaluated, so the conditional cannot
-see `MSK_NPM_GLOBAL_BASE`. Until the runtime integration is corrected, the
-immutable npm baseline remains the active selection.
+`/opt/msk/npm-global`. MkChad derives a Node platform/architecture/major key
+such as `linux-x64-node22` during editor initialization. `nvim_shell` and the
+standalone OpenCode launcher use container-tools' generic bootstrap hook to run
+`mkchad-container-bootstrap`, which performs the same derivation after the
+container runtime has applied launcher environment values. All three entry
+points therefore select the same writable child ahead of the immutable baseline
+without mixing incompatible Node or architecture artifacts.
 
 ## Java and JDTLS
 

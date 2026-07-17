@@ -5,12 +5,17 @@ set -euo pipefail
 script_dir=$(dirname "$(realpath "$0")")
 bin_dir="$script_dir/../nvim/bin"
 target_dir="$HOME/.local/bin"
+
+# Keep launchers and the container-tools API they consume on the same revision.
+"$script_dir/install_tools.sh"
+
 files=(
   "$bin_dir"/*.sh
   "$bin_dir/nvim"
   "$bin_dir/nvim_shell"
   "$bin_dir/nvim_clear_data"
   "$bin_dir/mkchad"
+  "$bin_dir/mkchad-container-bootstrap"
   "$bin_dir/mkchad-opencode-server-image"
   "$bin_dir/mkchad-opencode-server"
   "$bin_dir/install_nvim_container"

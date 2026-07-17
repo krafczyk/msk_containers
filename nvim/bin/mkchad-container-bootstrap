@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+# Select the writable tool prefix for this image, then preserve the requested
+# command as the container-tools bootstrap contract requires.
+set -euo pipefail
+
+program=${0##*/}
+npm_base=${MSK_NPM_GLOBAL_BASE:-/opt/msk/npm-global}
+
+die() {
+  printf '%s: %s\n' "$program" "$*" >&2
+  exit 1
+}
+
+[[ $# -gt 0 ]] || die "no command was provided"
+command -v node >/dev/null 2>&1 || die "container Node.js is unavailable"
+
+node_global_key=$(node -p \
+  "process.platform + '-' + process.arch + '-node' + process.versions.node.split('.')[0]") || \
+  die "unable to determine the container Node.js platform"
+[[ $node_global_key =~ ^[A-Za-z0-9._-]+$ ]] || die "container Node.js returned an invalid platform key"
+
+export MSK_NPM_GLOBAL_BASE="$npm_base"
+export MSK_NPM_GLOBAL_ROOT="$npm_base/$node_global_key"
+export NPM_CONFIG_PREFIX="$MSK_NPM_GLOBAL_ROOT"
+export PATH="$MSK_NPM_GLOBAL_ROOT/bin:$PATH"
+
+exec "$@"

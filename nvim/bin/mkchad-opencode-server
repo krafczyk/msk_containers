@@ -8,11 +8,12 @@ set -euo pipefail
 program=${0##*/}
 script_dir=$(dirname "$(realpath "$0")")
 image_command="$script_dir/mkchad-opencode-server-image"
+bootstrap="$script_dir/mkchad-container-bootstrap"
 config_home=${XDG_CONFIG_HOME:-"$HOME/.config"}
 config_root="$config_home/mkchad"
 runtime_dir=${XDG_RUNTIME_DIR:-"$HOME/.local/share/mkchad/tmp"}
 cache_dir=${XDG_CACHE_HOME:-"$HOME/.local/cache"}
-npm_base=${XDG_DATA_HOME:-"$HOME/.local/share"}/msk_containers/npm-global
+npm_base="$HOME/.local/share/msk_containers/npm-global"
 npm_container_base=/opt/msk/npm-global
 opencode_config="$config_root/opencode.jsonc"
 
@@ -22,6 +23,7 @@ die() {
 }
 
 [[ -x $image_command ]] || die "in-image lifecycle command is missing or not executable: $image_command"
+[[ -x $bootstrap ]] || die "container bootstrap is missing or not executable: $bootstrap"
 
 container_signal=${SINGULARITY_CONTAINER:-${APPTAINER_CONTAINER:-}}
 if [[ -n $container_signal && ( ${MKCHAD_NVIM_IMAGE:-} == 1 || ${container_signal##*/} == neovim.sif ) ]]; then
@@ -46,12 +48,13 @@ image=${NVIM_CONT_LOCATION:-"$container_dir/neovim.sif"}
 mkdir -p -- "$runtime_dir" "$cache_dir" "$npm_base"
 
 exec "$container_launcher" "--$runtime" \
-  --env "MKCHAD_NVIM_IMAGE=1" \
-  --env "NVIM_APPNAME=mkchad" \
-  --env "XDG_CONFIG_HOME=$config_home" \
-  --env "XDG_RUNTIME_DIR=$runtime_dir" \
-  --env "XDG_CACHE_HOME=$cache_dir" \
-  --env "MSK_NPM_GLOBAL_BASE=$npm_container_base" \
-  --env "OPENCODE_CONFIG=$opencode_config" \
   --ct-bind "$npm_base:$npm_container_base" \
-  "$image" "$image_command" "$@"
+  --ct-env "MKCHAD_NVIM_IMAGE=1" \
+  --ct-env "NVIM_APPNAME=mkchad" \
+  --ct-env "XDG_CONFIG_HOME=$config_home" \
+  --ct-env "XDG_RUNTIME_DIR=$runtime_dir" \
+  --ct-env "XDG_CACHE_HOME=$cache_dir" \
+  --ct-env "MSK_NPM_GLOBAL_BASE=$npm_container_base" \
+  --ct-env "OPENCODE_CONFIG=$opencode_config" \
+  --ct-bootstrap "$bootstrap" \
+  -- "$image" "$image_command" "$@"

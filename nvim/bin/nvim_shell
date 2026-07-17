@@ -1,8 +1,21 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-script_dir=$(dirname $(realpath $0))
+set -euo pipefail
 
-. $script_dir/nvim_library.sh
+script_dir=$(dirname "$(realpath "$0")")
 
-# Launch Singularity
-ct_shell.sh --$TOOL $NVIM_CONT_LOCATION
+. "$script_dir/nvim_library.sh"
+
+msk_npm_global_base="$HOME/.local/share/msk_containers/npm-global"
+msk_npm_container_base=/opt/msk/npm-global
+
+mkdir -p "$msk_npm_global_base"
+
+# Apply the same writable side-installed tools as MkChad without changing the
+# generic shell's Neovim application or XDG environment.
+exec "$script_dir/ct_shell.sh" "--$TOOL" \
+  --ct-bind "$msk_npm_global_base:$msk_npm_container_base" \
+  --ct-env "MSK_NPM_GLOBAL_BASE=$msk_npm_container_base" \
+  --ct-bootstrap "$script_dir/mkchad-container-bootstrap" \
+  --ct-container-shell /bin/bash \
+  -- "$NVIM_CONT_LOCATION"
