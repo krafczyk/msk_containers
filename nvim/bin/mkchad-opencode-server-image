@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+# Execute the reviewed lifecycle command from an existing MkChad image. This
+# companion is invoked by both MkChad and the public host launcher.
+set -euo pipefail
+
+program=${0##*/}
+config_home=${XDG_CONFIG_HOME:-"$HOME/.config"}
+config_root="$config_home/mkchad"
+entrypoint="$config_root/lua/mkchad/opencode/command.lua"
+runtime_dir=${XDG_RUNTIME_DIR:-"$HOME/.local/share/mkchad/tmp"}
+cache_dir=${XDG_CACHE_HOME:-"$HOME/.local/cache"}
+npm_container_base=/opt/msk/npm-global
+opencode_config="$config_root/opencode.jsonc"
+
+die() {
+  printf '%s: %s\n' "$program" "$*" >&2
+  exit "${2:-1}"
+}
+
+container_signal=${SINGULARITY_CONTAINER:-${APPTAINER_CONTAINER:-}}
+[[ -n $container_signal && ( ${MKCHAD_NVIM_IMAGE:-} == 1 || ${container_signal##*/} == neovim.sif ) ]] || \
+  die "this command must run inside the active MkChad image"
+[[ -f $entrypoint ]] || die "installed MkChad lifecycle entrypoint is missing: $entrypoint"
+[[ -r $entrypoint ]] || die "installed MkChad lifecycle entrypoint is not readable: $entrypoint"
+
+export NVIM_APPNAME=mkchad
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-$runtime_dir}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$cache_dir}"
+export MSK_NPM_GLOBAL_BASE="${MSK_NPM_GLOBAL_BASE:-$npm_container_base}"
+export OPENCODE_CONFIG="${OPENCODE_CONFIG:-$opencode_config}"
+command -v nvim >/dev/null 2>&1 || die "container Neovim is unavailable"
+exec nvim -u NONE -l "$entrypoint" -- "$@"

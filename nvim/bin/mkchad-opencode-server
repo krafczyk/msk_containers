@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 
-# Run the reviewed MkChad lifecycle in the active Neovim image without loading
-# MkChad itself.  Keep all diagnostics on stderr: --json is a strict command
-# protocol consumed by the editor adapter.
+# Enter the active Neovim image through the standard container-tools launcher,
+# then delegate to the in-image lifecycle command. Keep diagnostics on stderr:
+# --json is a strict protocol consumed by the editor adapter.
 set -euo pipefail
 
 program=${0##*/}
+script_dir=$(dirname "$(realpath "$0")")
+image_command="$script_dir/mkchad-opencode-server-image"
 config_home=${XDG_CONFIG_HOME:-"$HOME/.config"}
 config_root="$config_home/mkchad"
-entrypoint="$config_root/lua/mkchad/opencode/command.lua"
 runtime_dir=${XDG_RUNTIME_DIR:-"$HOME/.local/share/mkchad/tmp"}
 cache_dir=${XDG_CACHE_HOME:-"$HOME/.local/cache"}
 npm_base=${XDG_DATA_HOME:-"$HOME/.local/share"}/msk_containers/npm-global
@@ -20,22 +21,12 @@ die() {
   exit "${2:-1}"
 }
 
-[[ -f $entrypoint ]] || die "installed MkChad lifecycle entrypoint is missing: $entrypoint"
-[[ -r $entrypoint ]] || die "installed MkChad lifecycle entrypoint is not readable: $entrypoint"
+[[ -x $image_command ]] || die "in-image lifecycle command is missing or not executable: $image_command"
 
 container_signal=${SINGULARITY_CONTAINER:-${APPTAINER_CONTAINER:-}}
 if [[ -n $container_signal && ( ${MKCHAD_NVIM_IMAGE:-} == 1 || ${container_signal##*/} == neovim.sif ) ]]; then
-  # New images and the MkChad launcher set MKCHAD_NVIM_IMAGE.  The standard
-  # runtime image name retains compatibility with an already running MkChad
-  # image launched before that marker existed.  Do not trust the legacy marker
-  # by itself to select a host nvim binary from an ordinary shell.
-  export NVIM_APPNAME=mkchad
-  export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-$runtime_dir}"
-  export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$cache_dir}"
-  export MSK_NPM_GLOBAL_BASE="${MSK_NPM_GLOBAL_BASE:-$npm_container_base}"
-  export OPENCODE_CONFIG="${OPENCODE_CONFIG:-$opencode_config}"
-  command -v nvim >/dev/null 2>&1 || die "container Neovim is unavailable"
-  exec nvim -u NONE -l "$entrypoint" -- "$@"
+  # Compatibility for MkChad revisions that still call the public launcher.
+  exec "$image_command" "$@"
 fi
 
 if command -v apptainer >/dev/null 2>&1; then
@@ -45,6 +36,8 @@ elif command -v singularity >/dev/null 2>&1; then
 else
   die "neither Apptainer nor SingularityCE is available"
 fi
+container_launcher="$script_dir/ct_exec.sh"
+[[ -x $container_launcher ]] || die "container tools launcher is missing or not executable: $container_launcher"
 
 container_dir=${NVIM_CONTAINER_DIR:-"$HOME/containers"}
 image=${NVIM_CONT_LOCATION:-"$container_dir/neovim.sif"}
@@ -52,12 +45,13 @@ image=${NVIM_CONT_LOCATION:-"$container_dir/neovim.sif"}
 
 mkdir -p -- "$runtime_dir" "$cache_dir" "$npm_base"
 
-exec "$runtime" exec \
+exec "$container_launcher" "--$runtime" \
   --env "MKCHAD_NVIM_IMAGE=1" \
   --env "NVIM_APPNAME=mkchad" \
+  --env "XDG_CONFIG_HOME=$config_home" \
   --env "XDG_RUNTIME_DIR=$runtime_dir" \
   --env "XDG_CACHE_HOME=$cache_dir" \
   --env "MSK_NPM_GLOBAL_BASE=$npm_container_base" \
   --env "OPENCODE_CONFIG=$opencode_config" \
-  --bind "$npm_base:$npm_container_base" \
-  "$image" nvim -u NONE -l "$entrypoint" -- "$@"
+  --ct-bind "$npm_base:$npm_container_base" \
+  "$image" "$image_command" "$@"
