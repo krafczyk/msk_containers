@@ -6,9 +6,7 @@ From: nvim_container_ppc64le.tar
     export MKCHAD_NVIM_IMAGE=1
 
     if [ -n "${MSK_NPM_GLOBAL_BASE:-}" ]; then
-        export MSK_NPM_GLOBAL_ROOT="${MSK_NPM_GLOBAL_BASE}/${MSK_CONTAINER_ARCH}/${MSK_NODE_GLOBAL_KEY}"
-        export NPM_CONFIG_PREFIX="$MSK_NPM_GLOBAL_ROOT"
-        export PATH="$MSK_NPM_GLOBAL_ROOT/bin:$PATH"
+        export MSK_NPM_GLOBAL_ROOT="${MSK_NPM_GLOBAL_BASE}"
     fi
 
 %runscript

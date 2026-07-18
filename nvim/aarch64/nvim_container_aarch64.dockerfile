@@ -44,8 +44,6 @@ RUN pip3 install --prefix /usr \
     shellcheck --version
 
 ENV NODE_VER=20.19.3
-ENV MSK_CONTAINER_ARCH=aarch64
-ENV MSK_NODE_GLOBAL_KEY=node-v20
 
 RUN mkdir -p /opt/msk/npm-global
 
@@ -111,5 +109,6 @@ ENV PATH="/nvim/lua-language-server/bin:$PATH"
 
 # Baseline tools make a fresh MkChad launch work before a user-managed runtime
 # update has been installed.  The latter takes precedence when mounted.
-ARG OPENCODE_VERSION=1.17.20
-RUN npm install -g basedpyright "opencode-ai@${OPENCODE_VERSION}"
+ARG OPENCODE_VERSION=1.18.3
+RUN npm install -g basedpyright "opencode-ai@${OPENCODE_VERSION}" && \
+    opencode --version

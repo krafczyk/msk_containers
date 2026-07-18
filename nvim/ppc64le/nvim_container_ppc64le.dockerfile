@@ -44,8 +44,6 @@ RUN pip3 install --prefix /usr \
     shellcheck --version
 
 ENV NODE_VER=20.19.3
-ENV MSK_CONTAINER_ARCH=ppc64le
-ENV MSK_NODE_GLOBAL_KEY=node-v20
 
 RUN mkdir -p /opt/msk/npm-global
 
@@ -103,7 +101,7 @@ RUN git clone --depth 1 --branch 3.15.0 https://github.com/LuaLS/lua-language-se
 
 ENV PATH="/nvim/lua-language-server/bin:$PATH"
 
-# Baseline tools make a fresh MkChad launch work before a user-managed runtime
-# update has been installed.  The latter takes precedence when mounted.
-ARG OPENCODE_VERSION=1.17.18
-RUN npm install -g basedpyright "opencode-ai@${OPENCODE_VERSION}"
+# OpenCode does not publish a Linux PPC64LE binary. Keep compatible Node tooling
+# available without forcing npm to install an unsupported OpenCode package.
+RUN npm install -g basedpyright && \
+    basedpyright --version

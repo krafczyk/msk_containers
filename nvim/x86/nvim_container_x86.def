@@ -5,12 +5,10 @@ From: nvim_container_x86.tar
     export CC=clang
     export MKCHAD_NVIM_IMAGE=1
 
-    # MkChad supplies an explicitly mounted, architecture-neutral parent.
-    # The image chooses the architecture/Node-major-specific npm prefix.
+    # MkChad appends the same Node platform/architecture/major key used by the
+    # shell and server bootstrap to this architecture-neutral mounted parent.
     if [ -n "${MSK_NPM_GLOBAL_BASE:-}" ]; then
-        export MSK_NPM_GLOBAL_ROOT="${MSK_NPM_GLOBAL_BASE}/${MSK_CONTAINER_ARCH}/${MSK_NODE_GLOBAL_KEY}"
-        export NPM_CONFIG_PREFIX="$MSK_NPM_GLOBAL_ROOT"
-        export PATH="$MSK_NPM_GLOBAL_ROOT/bin:$PATH"
+        export MSK_NPM_GLOBAL_ROOT="${MSK_NPM_GLOBAL_BASE}"
     fi
 
 %runscript

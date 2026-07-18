@@ -139,7 +139,7 @@ baseline:
 | --- | --- | --- | --- |
 | `neovim` | All | Unpinned | Provides the Node.js client used by Neovim remote plugins and integrations. |
 | `basedpyright` | All | Unpinned | Provides Python type checking and language-server support. |
-| `opencode-ai` | All | `1.17.20` on x86 and ARM; `1.17.18` on PPC | Provides the OpenCode CLI/server used by MkChad. The explicit version prevents an uncontrolled latest-version change during image construction. |
+| `opencode-ai` | x86, ARM | `1.18.3` | Provides the OpenCode CLI/server used by MkChad. The explicit version prevents an uncontrolled latest-version change during image construction. OpenCode does not publish a Linux PPC64LE binary, so the PPC image intentionally omits it rather than failing its npm installation. |
 | `agent-browser` | x86 | Pinned to `0.32.2` | Provides the browser-driving CLI used by Compound Engineering browser testing, dogfood, debugging, and visual-polish workflows. It is x86-only with the rest of the browser stack and requires the selected Node.js 24 baseline. |
 
 At runtime, MkChad bind-mounts an architecture-neutral writable npm parent at
@@ -147,9 +147,13 @@ At runtime, MkChad bind-mounts an architecture-neutral writable npm parent at
 such as `linux-x64-node24` during editor initialization. `nvim_shell` and the
 standalone OpenCode launcher use container-tools' generic bootstrap hook to run
 `mkchad-container-bootstrap`, which performs the same derivation after the
-container runtime has applied launcher environment values. All three entry
-points therefore select the same writable child ahead of the immutable baseline
-without mixing incompatible Node or architecture artifacts.
+container runtime has applied launcher environment values. The Apptainer image
+environment passes the mounted parent to MkChad as `MSK_NPM_GLOBAL_ROOT`; MkChad
+then appends that same derived key. All three entry points therefore select the
+same writable child ahead of the immutable baseline without mixing incompatible
+Node or architecture artifacts. The PPC image can use compatible side-installed
+Node tools, but OpenCode itself remains unavailable there without an upstream
+PPC64LE release.
 
 ## Java and JDTLS
 

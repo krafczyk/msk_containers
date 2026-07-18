@@ -51,8 +51,6 @@ RUN pip3 install --prefix /usr \
     shellcheck --version
 
 ENV NODE_VER=24.18.0
-ENV MSK_CONTAINER_ARCH=x86_64
-ENV MSK_NODE_GLOBAL_KEY=node-v24
 
 # A read-only image still needs a stable target for the runtime-owned npm
 # prefix bind mount.
@@ -128,7 +126,7 @@ ENV PATH="/nvim/lua-language-server/bin:$PATH"
 
 # Baseline tools make a fresh MkChad launch work before a user-managed runtime
 # update has been installed.  The latter takes precedence when mounted.
-ARG OPENCODE_VERSION=1.17.20
+ARG OPENCODE_VERSION=1.18.3
 ARG AGENT_BROWSER_VERSION=0.32.2
 ARG PLAYWRIGHT_VERSION=1.61.1
 ARG PUPPETEER_VERSION=25.3.0
@@ -146,4 +144,5 @@ RUN npm install -g basedpyright \
     ln -s /opt/msk/browser-tools/node_modules/.bin/playwright /usr/bin/playwright && \
     ln -s /opt/msk/browser-tools/node_modules/.bin/puppeteer /usr/bin/puppeteer && \
     playwright install chromium && \
+    opencode --version && \
     agent-browser --version
