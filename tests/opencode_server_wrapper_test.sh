@@ -51,7 +51,7 @@ chmod 755 "$fake/apptainer" "$fake/nvim" "$fake/node" "$bin/ct_exec.sh"
 base_env=(
   "HOME=$home"
   "XDG_CONFIG_HOME=$config"
-  "XDG_RUNTIME_DIR=$home/.local/share/mkchad/tmp"
+  "XDG_RUNTIME_DIR=$work/host-runtime"
   "XDG_CACHE_HOME=$home/.local/cache"
   "XDG_DATA_HOME=$home/.local/share"
   "NVIM_CONT_LOCATION=$image"

@@ -11,7 +11,8 @@ image_command="$script_dir/mkchad-opencode-server-image"
 bootstrap="$script_dir/mkchad-container-bootstrap"
 config_home=${XDG_CONFIG_HOME:-"$HOME/.config"}
 config_root="$config_home/mkchad"
-runtime_dir=${XDG_RUNTIME_DIR:-"$HOME/.local/share/mkchad/tmp"}
+# Host runtime directories under /run are not bind-mounted into the image.
+runtime_dir="$HOME/.local/share/mkchad/tmp"
 cache_dir=${XDG_CACHE_HOME:-"$HOME/.local/cache"}
 npm_base="$HOME/.local/share/msk_containers/npm-global"
 npm_container_base=/opt/msk/npm-global
