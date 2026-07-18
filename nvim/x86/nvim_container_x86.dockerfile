@@ -35,8 +35,9 @@ ARG AST_GREP_VERSION=0.44.1
 ARG LUACHECK_VERSION=1.2.0-1
 RUN cargo install --locked --root /usr --version "${STYLUA_VERSION}" \
       --features luajit stylua && \
-    cargo install --locked --root /usr --version "${AST_GREP_VERSION}" \
+    cargo install --locked --root /opt/msk/ast-grep --version "${AST_GREP_VERSION}" \
       ast-grep && \
+    ln -s /opt/msk/ast-grep/bin/ast-grep /usr/bin/ast-grep && \
     luarocks install luacheck "${LUACHECK_VERSION}"
 
 # Install needed python packages

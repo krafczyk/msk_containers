@@ -200,7 +200,7 @@ every Lua repository.
 
 | Tool | Architectures | Version policy | Reason |
 | --- | --- | --- | --- |
-| ast-grep | All | Cargo crate pinned to `0.44.1` with `--locked` | Provides the `ast-grep` and `sg` syntax-aware structural search commands used by implementation and review workflows. Source installation gives x86, ARM, and PPC the same selected tool where npm's prebuilt CLI does not support PPC. |
+| ast-grep | All | Cargo crate pinned to `0.44.1` with `--locked` | Provides the `ast-grep` syntax-aware structural search command used by implementation and review workflows. The crate is installed beneath `/opt/msk/ast-grep`, and only its long-form binary is linked into `/usr/bin`; its `sg` alias remains unexposed because Fedora already owns `/usr/bin/sg`. Source installation gives x86, ARM, and PPC the same selected tool where npm's prebuilt CLI does not support PPC. |
 
 ## Source-Built Neovim Stack
 

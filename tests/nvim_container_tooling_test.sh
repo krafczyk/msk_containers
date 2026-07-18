@@ -40,7 +40,9 @@ for arch in x86 aarch64 ppc64le; do
   assert_active "$dockerfile" 'ffmpeg-free'
   assert_active "$dockerfile" 'ShellCheck'
   assert_active "$dockerfile" 'ARG AST_GREP_VERSION=0.44.1'
-  assert_active "$dockerfile" 'cargo install --locked --root /usr --version "${AST_GREP_VERSION}"'
+  assert_active "$dockerfile" 'cargo install --locked --root /opt/msk/ast-grep --version "${AST_GREP_VERSION}"'
+  assert_active "$dockerfile" 'ln -s /opt/msk/ast-grep/bin/ast-grep /usr/bin/ast-grep'
+  assert_not_contains "$dockerfile" '--root /usr --version "${AST_GREP_VERSION}"'
   assert_active "$dockerfile" '"jsonschema>=4.23,<5"'
   assert_active "$dockerfile" "python3 -c 'from jsonschema import Draft202012Validator'"
   assert_active "$dockerfile" 'ast-grep --version'
