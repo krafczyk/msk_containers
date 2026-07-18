@@ -29,24 +29,24 @@ EOF
 cat > "$fake/node" <<'EOF'
 #!/usr/bin/env bash
 [[ ${1:-} == -p ]] || exit 64
-printf '%s\n' 'linux-x64-node22'
+printf '%s\n' 'linux-x64-node24'
 EOF
 cat > "$bin/ct_shell.sh" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$@" > "$MKCHAD_TEST_RUNTIME_LOG"
 exit 23
 EOF
-mkdir -p "$npm_base/linux-x64-node22/bin"
+mkdir -p "$npm_base/linux-x64-node24/bin"
 cat > "$fake/opencode" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' 'immutable-baseline'
 EOF
-cat > "$npm_base/linux-x64-node22/bin/opencode" <<'EOF'
+cat > "$npm_base/linux-x64-node24/bin/opencode" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' 'side-installed'
 EOF
 chmod 755 "$fake/apptainer" "$fake/node" "$fake/opencode" \
-  "$npm_base/linux-x64-node22/bin/opencode" "$bin/ct_shell.sh"
+  "$npm_base/linux-x64-node24/bin/opencode" "$bin/ct_shell.sh"
 
 set +e
 HOME="$home" XDG_DATA_HOME="$home/data" \

@@ -7,13 +7,13 @@ RUN dnf update -y && \
     make cmake zsh python3 python3-devel \
     python3-pip python3-virtualenv \
     rust cargo luarocks gh \
-    zip unzip tar gettext curl jq \
+    zip unzip tar gettext curl jq ShellCheck \
     java-21-openjdk-devel \
     java-21-openjdk-jmods \
     maven xclip which ripgrep pgrep \
     time hyperfine strace perf \
     procps-ng iproute lsof sqlite openssh-clients \
-    xdg-utils chromium chromium-headless chromedriver \
+    xdg-utils ffmpeg-free chromium chromium-headless chromedriver \
     nss-tools xorg-x11-server-Xvfb \
     google-noto-sans-fonts google-noto-color-emoji-fonts \
     glibc-locale-source \
@@ -31,20 +31,28 @@ RUN dnf update -y && \
 RUN localedef -i en_US -f UTF-8 en_US.UTF-8
 
 ARG STYLUA_VERSION=2.5.2
+ARG AST_GREP_VERSION=0.44.1
 ARG LUACHECK_VERSION=1.2.0-1
 RUN cargo install --locked --root /usr --version "${STYLUA_VERSION}" \
       --features luajit stylua && \
+    cargo install --locked --root /usr --version "${AST_GREP_VERSION}" \
+      ast-grep && \
     luarocks install luacheck "${LUACHECK_VERSION}"
 
 # Install needed python packages
 RUN pip3 install --prefix /usr \
     "git+https://github.com/pydantic/pydantic@main#egg=pydantic" \
-    openai jedi pynvim python-lsp-server[all] selenium==4.46.0 \
-    py-spy
+    openai jedi pynvim python-lsp-server[all] "jsonschema>=4.23,<5" \
+    selenium==4.46.0 \
+    py-spy && \
+    python3 -c 'from jsonschema import Draft202012Validator' && \
+    ast-grep --version && \
+    ffmpeg -version && \
+    shellcheck --version
 
-ENV NODE_VER=22.22.3
+ENV NODE_VER=24.18.0
 ENV MSK_CONTAINER_ARCH=x86_64
-ENV MSK_NODE_GLOBAL_KEY=node-v22
+ENV MSK_NODE_GLOBAL_KEY=node-v24
 
 # A read-only image still needs a stable target for the runtime-owned npm
 # prefix bind mount.
@@ -121,17 +129,21 @@ ENV PATH="/nvim/lua-language-server/bin:$PATH"
 # Baseline tools make a fresh MkChad launch work before a user-managed runtime
 # update has been installed.  The latter takes precedence when mounted.
 ARG OPENCODE_VERSION=1.17.20
+ARG AGENT_BROWSER_VERSION=0.32.2
 ARG PLAYWRIGHT_VERSION=1.61.1
 ARG PUPPETEER_VERSION=25.3.0
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/msk/playwright-browsers
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 ENV PUPPETEER_SKIP_DOWNLOAD=true
+ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 RUN npm install -g basedpyright \
-      "opencode-ai@${OPENCODE_VERSION}" && \
+      "opencode-ai@${OPENCODE_VERSION}" \
+      "agent-browser@${AGENT_BROWSER_VERSION}" && \
     npm install --prefix /opt/msk/browser-tools --save-exact \
       "@playwright/test@${PLAYWRIGHT_VERSION}" \
       "puppeteer@${PUPPETEER_VERSION}" && \
     ln -s /opt/msk/browser-tools/node_modules /node_modules && \
     ln -s /opt/msk/browser-tools/node_modules/.bin/playwright /usr/bin/playwright && \
     ln -s /opt/msk/browser-tools/node_modules/.bin/puppeteer /usr/bin/puppeteer && \
-    playwright install chromium
+    playwright install chromium && \
+    agent-browser --version

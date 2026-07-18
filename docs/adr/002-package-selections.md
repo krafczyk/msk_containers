@@ -66,6 +66,7 @@ Fedora package names, but DNF may satisfy an executable capability such as
 | `zsh` | All | Supplies the interactive shell expected by the MkChad environment. |
 | `which` | All | Supports executable discovery in scripts and interactive diagnostics. |
 | `ripgrep` | All | Supplies fast recursive text search used by Neovim plugins and development agents. |
+| `ShellCheck` | All | Supplies the `shellcheck` static analyzer used to verify the repository's Bash launchers, installers, container tools, and tests. |
 | `jq` | x86, ARM | Supports machine-readable JSON inspection in development and integration workflows. It is not currently selected in the PPC Dockerfile. |
 | `gh` | x86 | Supplies the GitHub CLI used by repository and future Sprint Loop CI workflows in the primary image. |
 | `pgrep`, `procps-ng` | x86 | Supply process discovery and process-inspection commands used by server lifecycle and diagnostic workflows. `pgrep` is an executable capability provided by `procps-ng`, so the two DNF operands are redundant but recorded as written. |
@@ -77,6 +78,7 @@ Fedora package names, but DNF may satisfy an executable capability such as
 | `sqlite` | x86 | Supplies the SQLite CLI for database inspection, query-plan analysis, and index investigation. |
 | `openssh-clients` | x86 | Supplies `ssh` for browser and server verification that reaches a remote service through an explicit SSH tunnel. |
 | `xdg-utils` | x86 | Supplies `xdg-open`, the default Linux URL-handler interface used by Neovim's `vim.ui.open()` path. |
+| `ffmpeg-free` | All | Supplies the `ffmpeg` CLI used by Compound Engineering media analysis and artifact extraction. The Fedora build intentionally provides the distribution's codec-limited free variant. |
 
 The x86-only diagnostic selections reflect the current primary development
 image. They are not a claim that the secondary images have equivalent lifecycle
@@ -112,6 +114,7 @@ The Dockerfiles directly install these Python packages with pip:
 | `jedi` | All | Unpinned | Provides Python completion and static-analysis support. |
 | `pynvim` | All | Unpinned | Provides the Python client and remote-plugin integration for Neovim. |
 | `python-lsp-server[all]` | All | Unpinned, including its `all` extra | Provides a Python language server and its complete optional analysis, formatting, and linting feature set. |
+| `jsonschema` | All | `>=4.23,<5` | Provides Draft 2020-12 JSON Schema validation for OpenCode and Compound Engineering structured artifacts while remaining within the compatible major release. |
 | `selenium` | x86 | Pinned to `4.46.0` | Provides Python WebDriver browser automation against the version-aligned Fedora ChromeDriver. |
 | `py-spy` | x86 | Unpinned | Provides low-overhead Python sampling. Attaching to an existing process remains subject to the runtime's ptrace policy and may require `SYS_PTRACE`. |
 
@@ -125,7 +128,7 @@ architecture can use an explicitly selected upstream build.
 
 | Architecture | Node.js version | Archive architecture |
 | --- | --- | --- |
-| x86_64 | `22.22.3` | `linux-x64` |
+| x86_64 | `24.18.0` | `linux-x64` |
 | aarch64 | `20.19.3` | `linux-arm64` |
 | ppc64le | `20.19.3` | `linux-ppc64le` |
 
@@ -137,10 +140,11 @@ baseline:
 | `neovim` | All | Unpinned | Provides the Node.js client used by Neovim remote plugins and integrations. |
 | `basedpyright` | All | Unpinned | Provides Python type checking and language-server support. |
 | `opencode-ai` | All | `1.17.20` on x86 and ARM; `1.17.18` on PPC | Provides the OpenCode CLI/server used by MkChad. The explicit version prevents an uncontrolled latest-version change during image construction. |
+| `agent-browser` | x86 | Pinned to `0.32.2` | Provides the browser-driving CLI used by Compound Engineering browser testing, dogfood, debugging, and visual-polish workflows. It is x86-only with the rest of the browser stack and requires the selected Node.js 24 baseline. |
 
 At runtime, MkChad bind-mounts an architecture-neutral writable npm parent at
 `/opt/msk/npm-global`. MkChad derives a Node platform/architecture/major key
-such as `linux-x64-node22` during editor initialization. `nvim_shell` and the
+such as `linux-x64-node24` during editor initialization. `nvim_shell` and the
 standalone OpenCode launcher use container-tools' generic bootstrap hook to run
 `mkchad-container-bootstrap`, which performs the same derivation after the
 container runtime has applied launcher environment values. All three entry
@@ -188,6 +192,12 @@ StyLua and Luacheck still require repository-owned configuration and documented
 check commands. Installing them does not define a formatting or lint policy for
 every Lua repository.
 
+## Structural Search Tooling
+
+| Tool | Architectures | Version policy | Reason |
+| --- | --- | --- | --- |
+| ast-grep | All | Cargo crate pinned to `0.44.1` with `--locked` | Provides the `ast-grep` and `sg` syntax-aware structural search commands used by implementation and review workflows. Source installation gives x86, ARM, and PPC the same selected tool where npm's prebuilt CLI does not support PPC. |
+
 ## Source-Built Neovim Stack
 
 The following components are built or installed directly from upstream sources
@@ -204,10 +214,11 @@ rather than selected as Fedora packages.
 ## Browser and Browser-Automation Tooling
 
 Browser tooling is installed only in the x86 image. That image has Neovim 0.12
-and Node.js 22, while the secondary images currently have Neovim 0.11 and Node.js
-20. Current Playwright support requires Node.js 22 or newer, and Puppeteer
-`25.3.0` requires Node.js `22.12.0` or newer. The browser stack must not be
-presented as ARM or PPC compatible until those baselines are upgraded and tested.
+and Node.js 24, while the secondary images currently have Neovim 0.11 and Node.js
+20. Current agent-browser requires Node.js 24, Playwright requires Node.js 18 or
+newer, and Puppeteer `25.3.0` requires Node.js `22.12.0` or newer. The browser
+stack must not be presented as ARM or PPC compatible until those baselines are
+upgraded and tested.
 
 | Package or component | Version policy | Reason |
 | --- | --- | --- |
@@ -220,6 +231,7 @@ presented as ARM or PPC compatible until those baselines are upgraded and tested
 | `nss-tools` | Fedora base version | Provides `certutil` for isolated NSS certificate databases used in private-CA browser tests. |
 | `@playwright/test` | npm package pinned to `1.61.1` | Provides Playwright, its test runner, assertions, browser contexts, tracing, and command-line tooling. |
 | `puppeteer` | npm package pinned to `25.3.0` | Provides Chrome DevTools Protocol and WebDriver BiDi automation for scripts that use the Puppeteer API. |
+| `agent-browser` | npm package pinned to `0.32.2` | Provides a command-oriented browser interface for coding-agent workflows. `AGENT_BROWSER_EXECUTABLE_PATH` selects the existing Fedora Chromium binary instead of downloading a browser into the build user's home. |
 | Playwright Chrome for Testing | Managed by Playwright `1.61.1` under `/opt/msk/playwright-browsers` | Gives Playwright its tested full-browser revision instead of assuming compatibility with Fedora Chromium. |
 | Playwright Chromium headless shell | Managed by Playwright `1.61.1` under `/opt/msk/playwright-browsers` | Supplies the browser revision used by Playwright's default headless Chromium mode. |
 | Playwright ffmpeg | Managed by Playwright `1.61.1` under `/opt/msk/playwright-browsers` | Supports Playwright video recording and related media artifacts. |
@@ -233,8 +245,10 @@ CLIs. The exact direct versions are saved in the generated package metadata.
 Playwright installs its Chromium family payload but not Playwright Firefox or
 WebKit. Puppeteer is configured with `PUPPETEER_EXECUTABLE_PATH` to use Fedora
 Chromium and skips its separate Chrome-for-Testing download. Selenium uses
-Fedora ChromeDriver and Chromium. These choices provide all three automation
-APIs while avoiding additional Puppeteer and Selenium browser downloads.
+Fedora ChromeDriver and Chromium. agent-browser similarly uses
+`AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium-browser`. These choices provide
+all four automation APIs while avoiding additional Puppeteer, Selenium, and
+agent-browser downloads.
 
 Installing `nss-tools` does not trust a certificate automatically. Private-CA
 tests must import a disposable CA into an isolated profile and must not disable
@@ -259,6 +273,8 @@ browser state.
   reproducible until those inputs and the Rawhide bases are pinned.
 - `python-lsp-server[all]` installs a large transitive Python feature set that is
   intentionally not duplicated in this direct-selection inventory.
+- agent-browser and the Fedora FFmpeg CLI add further x86 browser/media payload;
+  ast-grep source compilation increases build time on every architecture.
 - Profilers that inspect processes or kernel counters do not bypass host or
   container security policy. Operators must explicitly grant ptrace access or
   relax `perf_event_paranoid` when a profiling workflow requires it.
@@ -321,6 +337,11 @@ revision.
 - [Fedora nss-tools package](https://packages.fedoraproject.org/pkgs/nss/nss-tools/)
 - [Fedora Xvfb package](https://packages.fedoraproject.org/pkgs/xorg-x11-server/xorg-x11-server-Xvfb/)
 - [Fedora OpenSSH clients package](https://packages.fedoraproject.org/pkgs/openssh/openssh-clients/)
+- [Fedora ShellCheck package](https://packages.fedoraproject.org/pkgs/ShellCheck/ShellCheck/)
 - [Playwright installation and requirements](https://playwright.dev/docs/intro)
 - [Puppeteer supported browsers](https://pptr.dev/supported-browsers)
 - [Selenium package](https://pypi.org/project/selenium/4.46.0/)
+- [agent-browser package](https://www.npmjs.com/package/agent-browser)
+- [ast-grep crate](https://crates.io/crates/ast-grep)
+- [jsonschema package](https://pypi.org/project/jsonschema/)
+- [Fedora ffmpeg-free package](https://packages.fedoraproject.org/pkgs/ffmpeg/ffmpeg-free/)

@@ -44,7 +44,7 @@ EOF
 cat > "$fake/node" <<'EOF'
 #!/usr/bin/env bash
 [[ ${1:-} == -p ]] || exit 64
-printf '%s\n' 'linux-x64-node22'
+printf '%s\n' 'linux-x64-node24'
 EOF
 chmod 755 "$fake/apptainer" "$fake/nvim" "$fake/node" "$bin/ct_exec.sh"
 
@@ -110,10 +110,10 @@ env "${base_env[@]}" \
   MKCHAD_NVIM_IMAGE=1 \
   XDG_RUNTIME_DIR="$work/image-runtime" XDG_CACHE_HOME="$work/image-cache" \
   MSK_NPM_GLOBAL_BASE=/opt/msk/npm-global \
-  MSK_NPM_GLOBAL_ROOT=/opt/msk/npm-global/linux-x64-node22 \
-  NPM_CONFIG_PREFIX=/opt/msk/npm-global/linux-x64-node22 \
+  MSK_NPM_GLOBAL_ROOT=/opt/msk/npm-global/linux-x64-node24 \
+  NPM_CONFIG_PREFIX=/opt/msk/npm-global/linux-x64-node24 \
   OPENCODE_CONFIG="$config/mkchad/opencode.jsonc" \
-  PATH="/opt/msk/npm-global/linux-x64-node22/bin:$fake:$PATH" \
+  PATH="/opt/msk/npm-global/linux-x64-node24/bin:$fake:$PATH" \
   "$installed_image_command" status --json
 container_status=$?
 set -e
@@ -123,10 +123,10 @@ mapfile -t nvim_argv < "$nvim_log"
 [[ ${nvim_argv[0]} == -u && ${nvim_argv[1]} == NONE && ${nvim_argv[2]} == -l && ${nvim_argv[4]} == -- && ${nvim_argv[5]} == status && ${nvim_argv[6]} == --json ]] || {
   printf '%s\n' 'in-container nvim argv changed' >&2; exit 1;
 }
-[[ $(<"$nvim_log") == *"marker=1 runtime=$work/image-runtime cache=$work/image-cache base=/opt/msk/npm-global root=/opt/msk/npm-global/linux-x64-node22 prefix=/opt/msk/npm-global/linux-x64-node22 config=$config/mkchad/opencode.jsonc"* ]] || {
+[[ $(<"$nvim_log") == *"marker=1 runtime=$work/image-runtime cache=$work/image-cache base=/opt/msk/npm-global root=/opt/msk/npm-global/linux-x64-node24 prefix=/opt/msk/npm-global/linux-x64-node24 config=$config/mkchad/opencode.jsonc"* ]] || {
   printf '%s\n' 'in-container invocation did not preserve MkChad environment' >&2; exit 1;
 }
-[[ $(<"$nvim_log") == *"path=/opt/msk/npm-global/linux-x64-node22/bin:"* ]] || {
+[[ $(<"$nvim_log") == *"path=/opt/msk/npm-global/linux-x64-node24/bin:"* ]] || {
   printf '%s\n' 'in-container invocation did not prioritize side-installed tools' >&2; exit 1;
 }
 

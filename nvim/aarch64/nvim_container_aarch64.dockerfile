@@ -7,7 +7,7 @@ RUN dnf update -y && \
     make cmake zsh python3 python3-devel \
     python3-pip python3-virtualenv \
     rust cargo luarocks \
-    zip unzip tar gettext curl jq \
+    zip unzip tar gettext curl jq ffmpeg-free ShellCheck \
     java-21-openjdk-devel \
     java-21-openjdk-jmods \
     maven xsel which ripgrep \
@@ -26,15 +26,22 @@ RUN dnf update -y && \
 RUN localedef -i en_US -f UTF-8 en_US.UTF-8
 
 ARG STYLUA_VERSION=2.5.2
+ARG AST_GREP_VERSION=0.44.1
 ARG LUACHECK_VERSION=1.2.0-1
 RUN cargo install --locked --root /usr --version "${STYLUA_VERSION}" \
       --features luajit stylua && \
+    cargo install --locked --root /usr --version "${AST_GREP_VERSION}" \
+      ast-grep && \
     luarocks install luacheck "${LUACHECK_VERSION}"
 
 # Install needed python packages
 RUN pip3 install --prefix /usr \
     "git+https://github.com/pydantic/pydantic@main#egg=pydantic" \
-    openai jedi pynvim python-lsp-server[all]
+    openai jedi pynvim python-lsp-server[all] "jsonschema>=4.23,<5" && \
+    python3 -c 'from jsonschema import Draft202012Validator' && \
+    ast-grep --version && \
+    ffmpeg -version && \
+    shellcheck --version
 
 ENV NODE_VER=20.19.3
 ENV MSK_CONTAINER_ARCH=aarch64
