@@ -1,5 +1,5 @@
-# Use Fedora 43 for x86 as the base image
-FROM quay.io/fedora/fedora:43@sha256:a08659cad3f9c8279e70bea1feee02162a1751bda3103c55ba437707fa8efeca AS nvim_container_base
+# Use the pinned Fedora 43 multi-architecture base image
+FROM quay.io/fedora/fedora:43@sha256:d9c079f2727706bfe335fefae57c7518a84e97daf4b1bf9d50fb3e8a75e7e78c AS nvim_container_base
 
 # Update and install essential packages
 RUN dnf update -y && \
@@ -67,13 +67,11 @@ RUN npm install -g neovim
 
 ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk
 
-# Install eclipse
-# main branch to work around update issue in a toolchain component
+# Install Eclipse JDTLS
 ENV JDTLS_MILESTONE=1.56.0
 RUN set -eux;  cd /nvim; \
     base="https://download.eclipse.org/jdtls/milestones/${JDTLS_MILESTONE}"; \
     file="$(curl -fsSL ${base}/latest.txt | tr -d '\n')"; \
-    curl -fsSLO "${base}/${file}"; \
     curl -fsSLO "${base}/${file}"; \
     sum="$(curl -fsSL "${base}/${file}.sha256" \
         | tr -d '\r' \
@@ -82,7 +80,8 @@ RUN set -eux;  cd /nvim; \
     test -n "${sum}"; \
     echo "${sum}  ${file}" | sha256sum -c -; \
     mkdir -p /nvim/jdtls; \
-    tar --no-same-owner --no-same-permissions -xzf "${file}" -C /nvim/jdtls --strip-components=1
+    tar --no-same-owner --no-same-permissions -xzf "${file}" -C /nvim/jdtls; \
+    test -x /nvim/jdtls/bin/jdtls
 
 ENV PATH=/nvim/jdtls/bin:$PATH
 
@@ -107,7 +106,8 @@ RUN cd /nvim && \
 RUN cd /nvim/neovim && \
     cmake -S cmake.deps -B .deps -G Ninja \
       -D CMAKE_BUILD_TYPE=RelWithDebInfo \
-      -DUSE_BUNDLED=ON && \
+      -DUSE_BUNDLED=ON \
+      -DUSE_BUNDLED_LUAJIT=OFF && \
     cmake --build .deps
 
 # Build/Install neovim

@@ -26,6 +26,13 @@ Maintain the package selections below. New direct dependencies must be added to
 this ADR, or supersede it, when their purpose or version policy differs from an
 existing selection.
 
+Keep the x86_64 and aarch64 images at functional parity: they use the same
+Fedora release, direct package selections, language-tool versions, Neovim
+version, and browser/agent tooling. Architecture-specific archive names and
+build workarounds may differ, but they must produce the same user-facing tool
+surface. PPC64LE remains an explicitly constrained target where upstream
+artifacts are unavailable.
+
 The architecture markers used below are:
 
 - All: x86_64, aarch64, and ppc64le.
@@ -37,8 +44,8 @@ The architecture markers used below are:
 
 | Architecture | Base selection | Reason |
 | --- | --- | --- |
-| x86_64 | Fedora 43, pinned by image digest | Provides a repeatable primary image baseline and current development packages. |
-| aarch64 | Fedora Rawhide | Provides sufficiently current native packages for the secondary ARM image, but currently follows a floating base. |
+| x86_64 | Fedora 43 multi-architecture image, pinned by digest | Provides a repeatable development baseline and current development packages. |
+| aarch64 | Fedora 43 multi-architecture image, pinned by digest | Uses the same release and image index as x86_64 so package selections remain aligned. |
 | ppc64le | Fedora Rawhide | Provides package availability for the less common Power architecture, but currently follows a floating base. |
 
 The operating-system entries below are direct DNF install operands. Most are
@@ -68,21 +75,21 @@ Fedora package names, but DNF may satisfy an executable capability such as
 | `ripgrep` | All | Supplies fast recursive text search used by Neovim plugins and development agents. |
 | `ShellCheck` | All | Supplies the `shellcheck` static analyzer used to verify the repository's Bash launchers, installers, container tools, and tests. |
 | `jq` | x86, ARM | Supports machine-readable JSON inspection in development and integration workflows. It is not currently selected in the PPC Dockerfile. |
-| `gh` | x86 | Supplies the GitHub CLI used by repository and future Sprint Loop CI workflows in the primary image. |
-| `pgrep`, `procps-ng` | x86 | Supply process discovery and process-inspection commands used by server lifecycle and diagnostic workflows. `pgrep` is an executable capability provided by `procps-ng`, so the two DNF operands are redundant but recorded as written. |
-| `iproute`, `lsof` | x86 | Supply network/interface and open-file diagnostics for local OpenCode server troubleshooting. |
-| `time` | x86 | Supplies GNU `/usr/bin/time`, including verbose resource accounting with `-v`. |
-| `hyperfine` | x86 | Provides repeatable command-level benchmarks with warmup and statistical reporting. |
-| `strace` | x86 | Attributes startup, subprocess, filesystem, and other system-call behavior. Attaching to an existing process remains subject to the runtime's ptrace policy. |
-| `perf` | x86 | Provides Linux CPU sampling and hardware/software performance counters. Counter access remains subject to the host's `perf_event_paranoid` policy. |
-| `sqlite` | x86 | Supplies the SQLite CLI for database inspection, query-plan analysis, and index investigation. |
-| `openssh-clients` | x86 | Supplies `ssh` for browser and server verification that reaches a remote service through an explicit SSH tunnel. |
-| `xdg-utils` | x86 | Supplies `xdg-open`, the default Linux URL-handler interface used by Neovim's `vim.ui.open()` path. |
+| `gh` | x86, ARM | Supplies the GitHub CLI used by repository and Sprint Loop CI workflows. |
+| `pgrep`, `procps-ng` | x86, ARM | Supply process discovery and process-inspection commands used by server lifecycle and diagnostic workflows. `pgrep` is an executable capability provided by `procps-ng`, so the two DNF operands are redundant but recorded as written. |
+| `iproute`, `lsof` | x86, ARM | Supply network/interface and open-file diagnostics for local OpenCode server troubleshooting. |
+| `time` | x86, ARM | Supplies GNU `/usr/bin/time`, including verbose resource accounting with `-v`. |
+| `hyperfine` | x86, ARM | Provides repeatable command-level benchmarks with warmup and statistical reporting. |
+| `strace` | x86, ARM | Attributes startup, subprocess, filesystem, and other system-call behavior. Attaching to an existing process remains subject to the runtime's ptrace policy. |
+| `perf` | x86, ARM | Provides Linux CPU sampling and hardware/software performance counters. Counter access remains subject to the host's `perf_event_paranoid` policy. |
+| `sqlite` | x86, ARM | Supplies the SQLite CLI for database inspection, query-plan analysis, and index investigation. |
+| `openssh-clients` | x86, ARM | Supplies `ssh` for browser and server verification that reaches a remote service through an explicit SSH tunnel. |
+| `xdg-utils` | x86, ARM | Supplies `xdg-open`, the default Linux URL-handler interface used by Neovim's `vim.ui.open()` path. |
 | `ffmpeg-free` | All | Supplies the `ffmpeg` CLI used by Compound Engineering media analysis and artifact extraction. The Fedora build intentionally provides the distribution's codec-limited free variant. |
 
-The x86-only diagnostic selections reflect the current primary development
-image. They are not a claim that the secondary images have equivalent lifecycle
-diagnostics.
+The x86 and ARM images intentionally provide the same shell and diagnostic tool
+set. PPC64LE remains narrower where its base repositories or upstream artifacts
+do not provide the selected tools.
 
 ## Locale Support
 
@@ -103,7 +110,7 @@ installed.
 | `python3-virtualenv` | All | Supports isolated project environments and clean-install verification. |
 | `libffi-devel` | All | Supplies FFI headers required by Python packages and native integrations. |
 | `openssl-devel` | All | Supplies TLS and cryptographic headers for native Python and service integrations. |
-| `memray` | x86 | Supplies Fedora's Memray CLI and Python allocation profiler for peak-memory and allocation analysis. |
+| `memray` | x86, ARM | Supplies Fedora's Memray CLI and Python allocation profiler for peak-memory and allocation analysis. |
 
 The Dockerfiles directly install these Python packages with pip:
 
@@ -115,8 +122,8 @@ The Dockerfiles directly install these Python packages with pip:
 | `pynvim` | All | Unpinned | Provides the Python client and remote-plugin integration for Neovim. |
 | `python-lsp-server[all]` | All | Unpinned, including its `all` extra | Provides a Python language server and its complete optional analysis, formatting, and linting feature set. |
 | `jsonschema` | All | `>=4.23,<5` | Provides Draft 2020-12 JSON Schema validation for OpenCode and Compound Engineering structured artifacts while remaining within the compatible major release. |
-| `selenium` | x86 | Pinned to `4.46.0` | Provides Python WebDriver browser automation against the version-aligned Fedora ChromeDriver. |
-| `py-spy` | x86 | Unpinned | Provides low-overhead Python sampling. Attaching to an existing process remains subject to the runtime's ptrace policy and may require `SYS_PTRACE`. |
+| `selenium` | x86, ARM | Pinned to `4.46.0` | Provides Python WebDriver browser automation against the version-aligned Fedora ChromeDriver. |
+| `py-spy` | x86, ARM | Unpinned | Provides low-overhead Python sampling. Attaching to an existing process remains subject to the runtime's ptrace policy and may require `SYS_PTRACE`. |
 
 The broad and floating pip selections favor a batteries-included interactive
 environment over a minimal or fully reproducible Python dependency closure.
@@ -129,7 +136,7 @@ architecture can use an explicitly selected upstream build.
 | Architecture | Node.js version | Archive architecture |
 | --- | --- | --- |
 | x86_64 | `24.18.0` | `linux-x64` |
-| aarch64 | `20.19.3` | `linux-arm64` |
+| aarch64 | `24.18.0` | `linux-arm64` |
 | ppc64le | `20.19.3` | `linux-ppc64le` |
 
 The following npm packages are installed globally into the immutable image
@@ -140,7 +147,7 @@ baseline:
 | `neovim` | All | Unpinned | Provides the Node.js client used by Neovim remote plugins and integrations. |
 | `basedpyright` | All | Unpinned | Provides Python type checking and language-server support. |
 | `opencode-ai` | x86, ARM | `1.18.3` | Provides the OpenCode CLI/server used by MkChad. The explicit version prevents an uncontrolled latest-version change during image construction. OpenCode does not publish a Linux PPC64LE binary, so the PPC image intentionally omits it rather than failing its npm installation. |
-| `agent-browser` | x86 | Pinned to `0.32.2` | Provides the browser-driving CLI used by Compound Engineering browser testing, dogfood, debugging, and visual-polish workflows. It is x86-only with the rest of the browser stack and requires the selected Node.js 24 baseline. |
+| `agent-browser` | x86, ARM | Pinned to `0.32.2` | Provides the browser-driving CLI used by Compound Engineering browser testing, dogfood, debugging, and visual-polish workflows on both Node.js 24 images. |
 
 At runtime, MkChad bind-mounts an architecture-neutral writable npm parent at
 `/opt/msk/npm-global`. MkChad derives a Node platform/architecture/major key
@@ -168,11 +175,11 @@ JDTLS is installed separately from Fedora packages:
 | Architecture | Selection | Reason |
 | --- | --- | --- |
 | x86_64 | Eclipse JDTLS milestone `1.56.0` archive | Uses an identified milestone and verifies the downloaded archive checksum before extraction. |
-| aarch64 | Current default branch of `eclipse-jdtls/eclipse.jdt.ls` | Builds a native-compatible repository artifact where the milestone archive path is not used. |
+| aarch64 | Eclipse JDTLS milestone `1.56.0` archive | Uses the same architecture-neutral Java artifact and checksum verification as x86_64. |
 | ppc64le | Current default branch of `eclipse-jdtls/eclipse.jdt.ls` | Builds JDTLS for an architecture without the selected x86 archive path. |
 
-The ARM and PPC selections are floating and should be pinned when a validated
-revision is identified.
+The PPC selection is floating and should be pinned when a validated revision is
+identified.
 
 ## Neovim Native Dependencies and Tools
 
@@ -181,8 +188,8 @@ revision is identified.
 | `libvterm`, `libvterm-devel` | All | Provide the terminal-emulation library and headers used by Neovim. |
 | `msgpack`, `msgpack-devel` | All | Provide MessagePack runtime support and headers used by Neovim RPC. |
 | `clangd` | All | Provides C and C++ language-server support in the editor. DNF resolves this executable capability through its Fedora provider package. |
-| `xclip` | x86 | Integrates Neovim with X11 clipboard commands in the primary image. |
-| `xsel` | ARM, PPC | Provides the equivalent X11 clipboard integration selected for the secondary images. |
+| `xclip` | x86, ARM | Integrates Neovim with X11 clipboard commands. |
+| `xsel` | PPC | Provides the equivalent X11 clipboard integration selected for PPC64LE. |
 
 ## Lua Verification Tooling
 
@@ -210,19 +217,18 @@ rather than selected as Fedora packages.
 | Component | Architectures | Version policy | Reason |
 | --- | --- | --- | --- |
 | OpenResty LuaJIT | All | Floating branch `v2.1-agentzh` | Provides a common LuaJIT-compatible runtime, including PPC64LE interpreter support. See ADR 001. |
-| Neovim | x86 | Tag `v0.12.4` | Provides the current primary editor and satisfies the Sprint Loop plugin's Neovim 0.12 minimum. |
-| Neovim | ARM, PPC | Tag `v0.11.2` | Provides the currently validated secondary-architecture editor baseline. It does not satisfy plugins that require Neovim 0.12. |
-| Lua Language Server | x86 | Tag `3.17.1` | Provides Lua diagnostics, completion, and language intelligence. |
-| Lua Language Server | ARM, PPC | Tag `3.15.0` | Provides the currently selected secondary-architecture Lua language tooling. ARM uses a modified build sequence because its upstream tests fail under the cross-build environment. |
+| Neovim | x86, ARM | Tag `v0.12.4` | Provides the current editor and satisfies the Sprint Loop plugin's Neovim 0.12 minimum. |
+| Neovim | PPC | Tag `v0.11.2` | Provides the currently validated PPC64LE editor baseline. It does not satisfy plugins that require Neovim 0.12. |
+| Lua Language Server | x86, ARM | Tag `3.17.1` | Provides Lua diagnostics, completion, and language intelligence. ARM uses a modified build sequence because upstream tests fail under the cross-build environment. |
+| Lua Language Server | PPC | Tag `3.15.0` | Provides the currently selected PPC64LE Lua language tooling. |
 
 ## Browser and Browser-Automation Tooling
 
-Browser tooling is installed only in the x86 image. That image has Neovim 0.12
-and Node.js 24, while the secondary images currently have Neovim 0.11 and Node.js
-20. Current agent-browser requires Node.js 24, Playwright requires Node.js 18 or
-newer, and Puppeteer `25.3.0` requires Node.js `22.12.0` or newer. The browser
-stack must not be presented as ARM or PPC compatible until those baselines are
-upgraded and tested.
+Browser tooling is installed in both the x86 and ARM images. Both images use
+Neovim 0.12 and Node.js 24, satisfying agent-browser's Node.js 24 requirement,
+Playwright's Node.js 18-or-newer requirement, and Puppeteer `25.3.0`'s Node.js
+`22.12.0`-or-newer requirement. PPC64LE remains excluded because it retains the
+older runtime baseline and lacks the complete upstream browser-tool surface.
 
 | Package or component | Version policy | Reason |
 | --- | --- | --- |
@@ -266,19 +272,19 @@ browser state.
   runtime image.
 - Source compilers, headers, and package managers remain in the final image so
   users can build native editor tooling interactively.
-- Architecture-specific package differences are intentional but must remain
-  visible; a successful x86 build does not prove parity on ARM or PPC.
-- The x86 image is the only current architecture that satisfies Neovim 0.12
-  requirements.
+- The x86 and ARM images maintain equivalent package and user-facing tool
+  surfaces; CI and source-level checks should reject one-sided drift.
+- The x86 and ARM images satisfy Neovim 0.12 requirements. PPC64LE does not.
 - Chromium, Chromium Headless, browser drivers, and Playwright's browser/media
   payloads materially increase image size and the frequency of security-driven
   rebuilds.
 - Several current pip and source selections float. Builds are not fully
-  reproducible until those inputs and the Rawhide bases are pinned.
+  reproducible until those inputs and the PPC64LE Rawhide base are pinned.
 - `python-lsp-server[all]` installs a large transitive Python feature set that is
   intentionally not duplicated in this direct-selection inventory.
-- agent-browser and the Fedora FFmpeg CLI add further x86 browser/media payload;
-  ast-grep source compilation increases build time on every architecture.
+- agent-browser and the Fedora FFmpeg CLI add further x86 and ARM browser/media
+  payload; ast-grep source compilation increases build time on every
+  architecture.
 - Profilers that inspect processes or kernel counters do not bypass host or
   container security policy. Operators must explicitly grant ptrace access or
   relax `perf_event_paranoid` when a profiling workflow requires it.
@@ -300,11 +306,13 @@ Rejected for the current development-container model because users and editor
 package managers need to compile native tools at runtime. A multi-stage minimal
 runtime image may be evaluated separately.
 
-### Require Exact Architecture Parity
+### Allow x86_64 and aarch64 to Drift
 
-Rejected as an immediate rule because upstream binary and package availability
-differs across x86_64, aarch64, and ppc64le. Differences must be documented and
-validated rather than hidden.
+Rejected because both platforms support the selected Fedora, Node.js, Neovim,
+language-server, browser, and agent-tool baselines. Keeping their direct package
+and user-facing tool surfaces aligned prevents architecture-dependent MkChad
+behavior. PPC64LE exceptions remain documented and validated separately where
+upstream availability differs.
 
 ### Use Only Lua Language Server for Lua Verification
 
