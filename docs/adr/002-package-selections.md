@@ -146,7 +146,6 @@ baseline:
 | --- | --- | --- | --- |
 | `neovim` | All | Unpinned | Provides the Node.js client used by Neovim remote plugins and integrations. |
 | `basedpyright` | All | Unpinned | Provides Python type checking and language-server support. |
-| `opencode-ai` | x86, ARM | `1.18.3` | Provides the OpenCode CLI/server used by MkChad. The explicit version prevents an uncontrolled latest-version change during image construction. OpenCode does not publish a Linux PPC64LE binary, so the PPC image intentionally omits it rather than failing its npm installation. |
 | `agent-browser` | x86, ARM | Pinned to `0.32.2` | Provides the browser-driving CLI used by Compound Engineering browser testing, dogfood, debugging, and visual-polish workflows on both Node.js 24 images. |
 
 At runtime, MkChad bind-mounts an architecture-neutral writable npm parent at
@@ -161,6 +160,21 @@ same writable child ahead of the immutable baseline without mixing incompatible
 Node or architecture artifacts. The PPC image can use compatible side-installed
 Node tools, but OpenCode itself remains unavailable there without an upstream
 PPC64LE release.
+
+## Source-Built OpenCode
+
+The x86 and ARM images build OpenCode `1.18.3-mkchad.1` from the MkChad fork at
+commit `ec97b6e774d9542b78a8b1b71890233f85f7c297`. That revision preserves the
+upstream `v1.18.3` server and TUI baseline while rendering custom tools with
+complete parent-session, child-session, and model metadata through the native
+Task UI. The metadata contract is recursive, so routed grandchildren remain
+browseable from their immediate parent sessions.
+
+The build temporarily installs the npm `bun` package at `1.3.14`, matching the
+fork's declared package manager, then removes Bun and the source checkout after
+installing the native binary. OpenCode does not publish a Linux PPC64LE binary,
+so the PPC image intentionally omits it rather than carrying an unverified
+source-build path.
 
 ## Java and JDTLS
 

@@ -127,7 +127,9 @@ ENV PATH="/nvim/lua-language-server/bin:$PATH"
 
 # Baseline tools make a fresh MkChad launch work before a user-managed runtime
 # update has been installed.  The latter takes precedence when mounted.
-ARG OPENCODE_VERSION=1.18.3
+ARG BUN_VERSION=1.3.14
+ARG OPENCODE_VERSION=1.18.3-mkchad.1
+ARG OPENCODE_REVISION=ec97b6e774d9542b78a8b1b71890233f85f7c297
 ARG AGENT_BROWSER_VERSION=0.32.2
 ARG PLAYWRIGHT_VERSION=1.61.1
 ARG PUPPETEER_VERSION=25.3.0
@@ -136,8 +138,18 @@ ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 RUN npm install -g basedpyright \
-      "opencode-ai@${OPENCODE_VERSION}" \
+      "bun@${BUN_VERSION}" \
       "agent-browser@${AGENT_BROWSER_VERSION}" && \
+    git clone --filter=blob:none https://github.com/krafczyk/opencode.git /nvim/opencode && \
+    cd /nvim/opencode && \
+    git checkout --detach "${OPENCODE_REVISION}" && \
+    PATH="$(npm root -g)/npm/node_modules/node-gyp/bin:${PATH}" bun install --frozen-lockfile && \
+    cd packages/opencode && \
+    OPENCODE_VERSION="${OPENCODE_VERSION}" bun run build --single --skip-install && \
+    install -m 0755 dist/opencode-linux-x64/bin/opencode /usr/local/bin/opencode && \
+    cd / && \
+    rm -rf /nvim/opencode && \
+    npm uninstall -g bun && \
     npm install --prefix /opt/msk/browser-tools --save-exact \
       "@playwright/test@${PLAYWRIGHT_VERSION}" \
       "puppeteer@${PUPPETEER_VERSION}" && \
