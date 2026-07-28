@@ -127,9 +127,10 @@ ENV PATH="/nvim/lua-language-server/bin:$PATH"
 
 # Baseline tools make a fresh MkChad launch work before a user-managed runtime
 # update has been installed.  The latter takes precedence when mounted.
-ARG BUN_VERSION=1.3.14
-ARG OPENCODE_VERSION=1.18.3-mkchad.5
-ARG OPENCODE_REVISION=997d1a6a0db14013980cbdeda9320f39006fe183
+ARG OPENCODE_VERSION=1.18.3-mkchad.6
+ARG OPENCODE_RELEASE_BASE=https://github.com/krafczyk/opencode/releases/download/v1.18.3-mkchad.6
+ARG OPENCODE_ASSET=opencode-ai-1.18.3-mkchad.6-linux-x64.tgz
+ARG OPENCODE_SHA256=d7be371f00b331dbf674c7b48b2982a77e0a8bad93867760e99a037985708cc9
 ARG AGENT_BROWSER_VERSION=0.32.2
 ARG PLAYWRIGHT_VERSION=1.61.1
 ARG PUPPETEER_VERSION=25.3.0
@@ -138,24 +139,25 @@ ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 RUN npm install -g basedpyright \
-      "bun@${BUN_VERSION}" \
-      "agent-browser@${AGENT_BROWSER_VERSION}" && \
-    git clone --filter=blob:none https://github.com/krafczyk/opencode.git /nvim/opencode && \
-    cd /nvim/opencode && \
-    git checkout --detach "${OPENCODE_REVISION}" && \
-    PATH="$(npm root -g)/npm/node_modules/node-gyp/bin:${PATH}" bun install --frozen-lockfile && \
-    cd packages/opencode && \
-    OPENCODE_VERSION="${OPENCODE_VERSION}" bun run build --single --skip-install && \
-    install -m 0755 dist/opencode-linux-x64/bin/opencode /usr/local/bin/opencode && \
-    cd / && \
-    rm -rf /nvim/opencode && \
-    npm uninstall -g bun && \
-    npm install --prefix /opt/msk/browser-tools --save-exact \
-      "@playwright/test@${PLAYWRIGHT_VERSION}" \
-      "puppeteer@${PUPPETEER_VERSION}" && \
+      "agent-browser@${AGENT_BROWSER_VERSION}"
+
+# Keep the reviewed package in Node's embedded immutable prefix. The mounted
+# user prefix remains earlier on PATH at runtime and can intentionally override it.
+RUN set -eux; \
+    opencode_tarball="/nvim/${OPENCODE_ASSET}"; \
+    curl --fail --show-error --location --retry 3 --retry-all-errors --proto '=https' --tlsv1.2 --output "${opencode_tarball}" \
+      "${OPENCODE_RELEASE_BASE}/${OPENCODE_ASSET}"; \
+    echo "${OPENCODE_SHA256}  ${opencode_tarball}" | sha256sum --check --strict -; \
+    test "$(npm prefix --global)" = "/nvim/node-v${NODE_VER}-linux-x64"; \
+    npm install -g "${opencode_tarball}"; \
+    rm -f "${opencode_tarball}"; \
+    test "$(opencode --version)" = "${OPENCODE_VERSION}"
+
+RUN npm install --prefix /opt/msk/browser-tools --save-exact \
+       "@playwright/test@${PLAYWRIGHT_VERSION}" \
+       "puppeteer@${PUPPETEER_VERSION}" && \
     ln -s /opt/msk/browser-tools/node_modules /node_modules && \
     ln -s /opt/msk/browser-tools/node_modules/.bin/playwright /usr/bin/playwright && \
     ln -s /opt/msk/browser-tools/node_modules/.bin/puppeteer /usr/bin/puppeteer && \
     playwright install chromium && \
-    opencode --version && \
     agent-browser --version

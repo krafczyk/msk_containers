@@ -161,24 +161,29 @@ Node or architecture artifacts. The PPC image can use compatible side-installed
 Node tools, but OpenCode itself remains unavailable there without an upstream
 PPC64LE release.
 
-## Source-Built OpenCode
+## Verified OpenCode Release
 
-The x86 and ARM images build OpenCode `1.18.3-mkchad.5` from the MkChad fork at
-commit `997d1a6a0db14013980cbdeda9320f39006fe183`. That revision preserves the
-upstream `v1.18.3` server baseline while rendering custom tools with complete
-parent-session, child-session, and model metadata through the native Task UI in
-both the terminal and embedded web clients. The metadata contract is recursive,
-so routed grandchildren remain browseable from their immediate parent sessions.
-Web Task cards use the final CE role segment as their human-readable agent name,
-and plugin metadata updates execute immediately so running children are
-browseable before their tools complete. Running Shell cards also expose their
-commands immediately and allow streamed output to be expanded before completion.
+The x86 and ARM images install the public MkChad OpenCode release
+`1.18.3-mkchad.6`, built from commit `21f5550541532a85fadb20894fa260c04555ebf6`.
+The Dockerfiles download only the architecture-specific GitHub release tarball
+over HTTPS with failure-preserving curl options, verify its pinned SHA-256 before
+global npm installation, and require `opencode --version` to equal the release
+version.
 
-The build temporarily installs the npm `bun` package at `1.3.14`, matching the
-fork's declared package manager, then removes Bun and the source checkout after
-installing the native binary. OpenCode does not publish a Linux PPC64LE binary,
-so the PPC image intentionally omits it rather than carrying an unverified
-source-build path.
+| Architecture | Release asset | SHA-256 |
+| --- | --- | --- |
+| x86_64 | `opencode-ai-1.18.3-mkchad.6-linux-x64.tgz` | `d7be371f00b331dbf674c7b48b2982a77e0a8bad93867760e99a037985708cc9` |
+| aarch64 | `opencode-ai-1.18.3-mkchad.6-linux-arm64.tgz` | `0944fffea5125b9ae8944d491336bde9660e995544fe271f5cc6d762bb40bfe6` |
+
+The verified package is installed in the embedded Node.js global prefix beneath
+`/nvim`, which is an immutable image baseline. At runtime,
+`/opt/msk/npm-global/<arch-node>/bin` remains earlier on `PATH`; an explicit
+user `npm install -g` of a reviewed GitHub release tarball therefore overrides
+the baseline without deleting or overwriting persisted user packages. The
+packaged release disables OpenCode's automatic and explicit upstream self-update
+paths, so application-driven updates cannot bypass that reviewed user action.
+OpenCode does not publish a Linux PPC64LE binary, so the PPC image intentionally
+omits it rather than carrying an unverified source-build path.
 
 ## Java and JDTLS
 
