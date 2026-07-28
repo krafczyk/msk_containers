@@ -125,12 +125,6 @@ RUN git clone --depth 1 --branch 3.17.1 https://github.com/LuaLS/lua-language-se
 
 ENV PATH="/nvim/lua-language-server/bin:$PATH"
 
-# Baseline tools make a fresh MkChad launch work before a user-managed runtime
-# update has been installed.  The latter takes precedence when mounted.
-ARG OPENCODE_VERSION=1.18.3-mkchad.6
-ARG OPENCODE_RELEASE_BASE=https://github.com/krafczyk/opencode/releases/download/v1.18.3-mkchad.6
-ARG OPENCODE_ASSET=opencode-ai-1.18.3-mkchad.6-linux-x64.tgz
-ARG OPENCODE_SHA256=d7be371f00b331dbf674c7b48b2982a77e0a8bad93867760e99a037985708cc9
 ARG AGENT_BROWSER_VERSION=0.32.2
 ARG PLAYWRIGHT_VERSION=1.61.1
 ARG PUPPETEER_VERSION=25.3.0
@@ -141,18 +135,6 @@ ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 RUN npm install -g basedpyright \
       "agent-browser@${AGENT_BROWSER_VERSION}"
 
-# Keep the reviewed package in Node's embedded immutable prefix. The mounted
-# user prefix remains earlier on PATH at runtime and can intentionally override it.
-RUN set -eux; \
-    opencode_tarball="/nvim/${OPENCODE_ASSET}"; \
-    curl --fail --show-error --location --retry 3 --retry-all-errors --proto '=https' --tlsv1.2 --output "${opencode_tarball}" \
-      "${OPENCODE_RELEASE_BASE}/${OPENCODE_ASSET}"; \
-    echo "${OPENCODE_SHA256}  ${opencode_tarball}" | sha256sum --check --strict -; \
-    test "$(npm prefix --global)" = "/nvim/node-v${NODE_VER}-linux-x64"; \
-    npm install -g "${opencode_tarball}"; \
-    rm -f "${opencode_tarball}"; \
-    test "$(opencode --version)" = "${OPENCODE_VERSION}"
-
 RUN npm install --prefix /opt/msk/browser-tools --save-exact \
        "@playwright/test@${PLAYWRIGHT_VERSION}" \
        "puppeteer@${PUPPETEER_VERSION}" && \
@@ -161,3 +143,22 @@ RUN npm install --prefix /opt/msk/browser-tools --save-exact \
     ln -s /opt/msk/browser-tools/node_modules/.bin/puppeteer /usr/bin/puppeteer && \
     playwright install chromium && \
     agent-browser --version
+
+# Baseline tools make a fresh MkChad launch work before a user-managed runtime
+# update has been installed.  The latter takes precedence when mounted.
+ARG OPENCODE_VERSION=1.18.3-mkchad.7
+ARG OPENCODE_RELEASE_BASE=https://github.com/krafczyk/opencode/releases/download/v1.18.3-mkchad.7
+ARG OPENCODE_ASSET=opencode-ai-1.18.3-mkchad.7-linux-x64.tgz
+ARG OPENCODE_SHA256=0798af8d5a1295da0c22340c012de529ed56734a203a32de088eedd3772af8df
+
+# Keep the reviewed package in Node's embedded immutable prefix. The mounted
+# user prefix remains earlier on PATH at runtime and can intentionally override it.
+RUN set -eux; \
+    opencode_tarball="/nvim/${OPENCODE_ASSET}"; \
+    curl --fail --show-error --location --retry 3 --retry-all-errors --connect-timeout 20 --max-time 1800 --retry-max-time 1800 --proto '=https' --tlsv1.2 --output "${opencode_tarball}" \
+      "${OPENCODE_RELEASE_BASE}/${OPENCODE_ASSET}"; \
+    echo "${OPENCODE_SHA256}  ${opencode_tarball}" | sha256sum --check --strict -; \
+    test "$(npm prefix --global)" = "/nvim/node-v${NODE_VER}-linux-x64"; \
+    npm install -g "${opencode_tarball}"; \
+    rm -f "${opencode_tarball}"; \
+    test "$(opencode --version)" = "${OPENCODE_VERSION}"

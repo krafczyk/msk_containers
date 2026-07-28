@@ -45,6 +45,23 @@ assert_not_contains() {
   fi
 }
 
+assert_not_contains_case_insensitive() {
+  local file=$1
+  local unexpected=$2
+  local line
+  local trimmed
+
+  while IFS= read -r line || [[ -n $line ]]; do
+    trimmed=${line#"${line%%[![:space:]]*}"}
+    [[ $trimmed == \#* ]] && continue
+    line=${line%%[[:space:]]#*}
+    if [[ ${line,,} == *"${unexpected,,}"* ]]; then
+      printf 'unexpected active case-insensitive %q in %s\n' "$unexpected" "$file" >&2
+      exit 1
+    fi
+  done < "$file"
+}
+
 assert_active_before() {
   local file=$1
   local first=$2
@@ -61,8 +78,12 @@ assert_active_before() {
       found_first=true
       continue
     fi
-    if [[ $found_first == true && $line == *"$second"* ]]; then
-      return
+    if [[ $line == *"$second"* ]]; then
+      if [[ $found_first == true ]]; then
+        return
+      fi
+      printf 'found active %q before required %q in %s\n' "$second" "$first" "$file" >&2
+      exit 1
     fi
   done < "$file"
 
@@ -148,8 +169,8 @@ normalized_dockerfile() {
   content=${content/"$luals_build"/__ARCHITECTURE_SPECIFIC_LUALS_BUILD__}
   content=${content//linux-x64/linux-CONTAINER_ARCH}
   content=${content//linux-arm64/linux-CONTAINER_ARCH}
-  content=${content//d7be371f00b331dbf674c7b48b2982a77e0a8bad93867760e99a037985708cc9/OPENCODE-CONTAINER-SHA256}
-  content=${content//0944fffea5125b9ae8944d491336bde9660e995544fe271f5cc6d762bb40bfe6/OPENCODE-CONTAINER-SHA256}
+  content=${content//"$x86_opencode_sha256"/OPENCODE-CONTAINER-SHA256}
+  content=${content//"$arm_opencode_sha256"/OPENCODE-CONTAINER-SHA256}
   printf '%s' "$content"
 }
 
@@ -186,6 +207,8 @@ done
 
 x86="$repo/nvim/x86/nvim_container_x86.dockerfile"
 arm="$repo/nvim/aarch64/nvim_container_aarch64.dockerfile"
+x86_opencode_sha256=0798af8d5a1295da0c22340c012de529ed56734a203a32de088eedd3772af8df
+arm_opencode_sha256=df9e85d844cfe2a138f859c7f3592c8de72070e124fb41371a3c6fb58a4faa57
 x86_definition="$repo/nvim/x86/nvim_container_x86.def"
 arm_definition="$repo/nvim/aarch64/nvim_container_aarch64.def"
 
@@ -209,13 +232,21 @@ assert_contains_once "$arm" "$arm_luals_build" 'aarch64 LuaLS build'
 assert_active "$x86" 'node-v${NODE_VER}-linux-x64.tar.gz'
 assert_active "$x86" 'ENV PATH="/nvim/node-v${NODE_VER}-linux-x64/bin:$PATH"'
 assert_not_contains "$x86" 'node-v${NODE_VER}-linux-arm64'
-assert_active "$x86" 'ARG OPENCODE_ASSET=opencode-ai-1.18.3-mkchad.6-linux-x64.tgz'
-assert_active "$x86" 'ARG OPENCODE_SHA256=d7be371f00b331dbf674c7b48b2982a77e0a8bad93867760e99a037985708cc9'
+assert_active "$x86" 'ARG OPENCODE_ASSET=opencode-ai-1.18.3-mkchad.7-linux-x64.tgz'
+assert_active "$x86" "ARG OPENCODE_SHA256=$x86_opencode_sha256"
+assert_contains_once "$x86" 'ARG OPENCODE_VERSION=1.18.3-mkchad.7' 'OpenCode version pin'
+assert_contains_once "$x86" 'ARG OPENCODE_RELEASE_BASE=https://github.com/krafczyk/opencode/releases/download/v1.18.3-mkchad.7' 'OpenCode release base pin'
+assert_contains_once "$x86" 'ARG OPENCODE_ASSET=opencode-ai-1.18.3-mkchad.7-linux-x64.tgz' 'OpenCode x64 asset pin'
+assert_contains_once "$x86" "ARG OPENCODE_SHA256=$x86_opencode_sha256" 'OpenCode x64 checksum pin'
 assert_active "$arm" 'node-v${NODE_VER}-linux-arm64.tar.gz'
 assert_active "$arm" 'ENV PATH="/nvim/node-v${NODE_VER}-linux-arm64/bin:$PATH"'
 assert_not_contains "$arm" 'node-v${NODE_VER}-linux-x64'
-assert_active "$arm" 'ARG OPENCODE_ASSET=opencode-ai-1.18.3-mkchad.6-linux-arm64.tgz'
-assert_active "$arm" 'ARG OPENCODE_SHA256=0944fffea5125b9ae8944d491336bde9660e995544fe271f5cc6d762bb40bfe6'
+assert_active "$arm" 'ARG OPENCODE_ASSET=opencode-ai-1.18.3-mkchad.7-linux-arm64.tgz'
+assert_active "$arm" "ARG OPENCODE_SHA256=$arm_opencode_sha256"
+assert_contains_once "$arm" 'ARG OPENCODE_VERSION=1.18.3-mkchad.7' 'OpenCode version pin'
+assert_contains_once "$arm" 'ARG OPENCODE_RELEASE_BASE=https://github.com/krafczyk/opencode/releases/download/v1.18.3-mkchad.7' 'OpenCode release base pin'
+assert_contains_once "$arm" 'ARG OPENCODE_ASSET=opencode-ai-1.18.3-mkchad.7-linux-arm64.tgz' 'OpenCode ARM64 asset pin'
+assert_contains_once "$arm" "ARG OPENCODE_SHA256=$arm_opencode_sha256" 'OpenCode ARM64 checksum pin'
 assert_active "$x86_definition" 'From: nvim_container_x86.tar'
 assert_not_contains "$x86_definition" 'nvim_container_aarch64'
 assert_active "$arm_definition" 'From: nvim_container_aarch64.tar'
@@ -260,12 +291,14 @@ for dockerfile in "$x86" "$arm"; do
   assert_active "$dockerfile" '-DUSE_BUNDLED_LUAJIT=OFF'
   assert_active "$dockerfile" 'git clone --depth 1 --branch 3.17.1 https://github.com/LuaLS/lua-language-server'
   assert_active "$dockerfile" 'npm install -g neovim'
-  assert_active "$dockerfile" 'ARG OPENCODE_VERSION=1.18.3-mkchad.6'
-  assert_active "$dockerfile" 'ARG OPENCODE_RELEASE_BASE=https://github.com/krafczyk/opencode/releases/download/v1.18.3-mkchad.6'
-  assert_active "$dockerfile" "curl --fail --show-error --location --retry 3 --retry-all-errors --proto '=https' --tlsv1.2 --output \"\${opencode_tarball}\""
+  assert_active "$dockerfile" 'ARG OPENCODE_VERSION=1.18.3-mkchad.7'
+  assert_active "$dockerfile" 'ARG OPENCODE_RELEASE_BASE=https://github.com/krafczyk/opencode/releases/download/v1.18.3-mkchad.7'
+  assert_active "$dockerfile" "curl --fail --show-error --location --retry 3 --retry-all-errors --connect-timeout 20 --max-time 1800 --retry-max-time 1800 --proto '=https' --tlsv1.2 --output \"\${opencode_tarball}\""
   assert_active "$dockerfile" '"${OPENCODE_RELEASE_BASE}/${OPENCODE_ASSET}"'
   assert_active "$dockerfile" 'echo "${OPENCODE_SHA256}  ${opencode_tarball}" | sha256sum --check --strict -'
   assert_active "$dockerfile" 'npm install -g "${opencode_tarball}"'
+  assert_contains_once "$dockerfile" 'echo "${OPENCODE_SHA256}  ${opencode_tarball}" | sha256sum --check --strict -' 'OpenCode checksum verification'
+  assert_contains_once "$dockerfile" 'npm install -g "${opencode_tarball}"' 'OpenCode package installation'
   assert_active_before "$dockerfile" 'echo "${OPENCODE_SHA256}  ${opencode_tarball}" | sha256sum --check --strict -' 'npm install -g "${opencode_tarball}"'
   assert_active "$dockerfile" 'test "$(opencode --version)" = "${OPENCODE_VERSION}"'
   assert_not_contains "$dockerfile" 'BUN_VERSION='
@@ -295,6 +328,7 @@ assert_not_contains "$repo/nvim/ppc64le/nvim_container_ppc64le.dockerfile" 'open
 assert_not_contains "$repo/nvim/ppc64le/nvim_container_ppc64le.dockerfile" 'OPENCODE_VERSION'
 assert_not_contains "$repo/nvim/ppc64le/nvim_container_ppc64le.dockerfile" 'OPENCODE_REVISION'
 assert_not_contains "$repo/nvim/ppc64le/nvim_container_ppc64le.dockerfile" 'OPENCODE_RELEASE_BASE'
+assert_not_contains_case_insensitive "$repo/nvim/ppc64le/nvim_container_ppc64le.dockerfile" 'opencode'
 
 assert_contains "$adr" '| `ffmpeg-free` | All |'
 assert_contains "$adr" '| `ShellCheck` | All |'
@@ -305,9 +339,9 @@ assert_contains "$adr" '| x86_64 | `24.18.0` | `linux-x64` |'
 assert_contains "$adr" '| aarch64 | `24.18.0` | `linux-arm64` |'
 assert_contains "$adr" '`linux-x64-node24`'
 assert_contains "$adr" 'OpenCode does not publish a Linux PPC64LE binary'
-assert_contains "$adr" '`1.18.3-mkchad.6`'
-assert_contains "$adr" '`d7be371f00b331dbf674c7b48b2982a77e0a8bad93867760e99a037985708cc9`'
-assert_contains "$adr" '`0944fffea5125b9ae8944d491336bde9660e995544fe271f5cc6d762bb40bfe6`'
+assert_contains "$adr" '`1.18.3-mkchad.7`'
+assert_contains "$adr" '`0798af8d5a1295da0c22340c012de529ed56734a203a32de088eedd3772af8df`'
+assert_contains "$adr" '`df9e85d844cfe2a138f859c7f3592c8de72070e124fb41371a3c6fb58a4faa57`'
 assert_contains "$adr" 'Keep the x86_64 and aarch64 images at functional parity'
 
 printf '%s\n' 'nvim container tooling tests passed'
