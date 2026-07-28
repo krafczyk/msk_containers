@@ -163,12 +163,12 @@ PPC64LE release.
 
 ## Source-Built OpenCode
 
-The x86 and ARM images build OpenCode `1.18.3-mkchad.1` from the MkChad fork at
-commit `ec97b6e774d9542b78a8b1b71890233f85f7c297`. That revision preserves the
-upstream `v1.18.3` server and TUI baseline while rendering custom tools with
-complete parent-session, child-session, and model metadata through the native
-Task UI. The metadata contract is recursive, so routed grandchildren remain
-browseable from their immediate parent sessions.
+The x86 and ARM images build OpenCode `1.18.3-mkchad.2` from the MkChad fork at
+commit `6ac414c7ee8f0b5ca4c98fddd1f3d43d4ab5c04a`. That revision preserves the
+upstream `v1.18.3` server baseline while rendering custom tools with complete
+parent-session, child-session, and model metadata through the native Task UI in
+both the terminal and embedded web clients. The metadata contract is recursive,
+so routed grandchildren remain browseable from their immediate parent sessions.
 
 The build temporarily installs the npm `bun` package at `1.3.14`, matching the
 fork's declared package manager, then removes Bun and the source checkout after
