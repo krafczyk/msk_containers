@@ -134,8 +134,8 @@ ENV PATH="/nvim/lua-language-server/bin:$PATH"
 # Baseline tools make a fresh MkChad launch work before a user-managed runtime
 # update has been installed.  The latter takes precedence when mounted.
 ARG BUN_VERSION=1.3.14
-ARG OPENCODE_VERSION=1.18.3-mkchad.4
-ARG OPENCODE_REVISION=223d942b977f5afcbbeeba72f869163daf01920f
+ARG OPENCODE_VERSION=1.18.3-mkchad.5
+ARG OPENCODE_REVISION=997d1a6a0db14013980cbdeda9320f39006fe183
 ARG AGENT_BROWSER_VERSION=0.32.2
 ARG PLAYWRIGHT_VERSION=1.61.1
 ARG PUPPETEER_VERSION=25.3.0
