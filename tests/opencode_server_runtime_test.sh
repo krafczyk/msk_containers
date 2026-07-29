@@ -208,7 +208,7 @@ if curl --fail --silent --show-error --max-time 2 --cacert "$ca_cert" "$url/glob
   printf '%s\n' 'public admission remained reachable at broker pidfd dispatch' >&2
   exit 1
 fi
-touch "$hook_dir/pidfd-signal.release"
+touch "$hook_dir/pidfd-signal.resume"
 wait "$stop_pid"
 expect_json "$work/stop-1.json" stop inactive
 [[ ! -e $state_file && ! -e $control_file ]] || {
