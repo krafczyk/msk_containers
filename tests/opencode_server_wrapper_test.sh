@@ -17,6 +17,7 @@ runtime_log="$work/runtime.log"
 nvim_log="$work/nvim.log"
 installed_wrapper="$bin/mkchad-opencode-server"
 installed_image_command="$bin/mkchad-opencode-server-image"
+installed_mkchad="$bin/mkchad"
 mount_config="$work/ct_mount.conf"
 repo=${wrapper%/nvim/bin/mkchad-opencode-server}
 installer="$repo/bin/install_nvim.sh"
@@ -30,7 +31,7 @@ cat > "$fake/apptainer" <<'EOF'
 #!/usr/bin/env bash
 exit 64
 EOF
-cat > "$bin/ct_exec.sh" <<'EOF'
+cat > "$bin/ct_instance_exec.sh" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$@" > "$MKCHAD_TEST_RUNTIME_LOG"
 printf 'mount_config=%s\n' "${CT_MOUNT_CFG:-}" >> "$MKCHAD_TEST_RUNTIME_LOG"
@@ -47,7 +48,7 @@ cat > "$fake/node" <<'EOF'
 [[ ${1:-} == -p ]] || exit 64
 printf '%s\n' 'linux-x64-node24'
 EOF
-chmod 755 "$fake/apptainer" "$fake/nvim" "$fake/node" "$bin/ct_exec.sh"
+chmod 755 "$fake/apptainer" "$fake/nvim" "$fake/node" "$bin/ct_instance_exec.sh"
 
 base_env=(
   "HOME=$home"
@@ -79,32 +80,57 @@ set -e
 [[ $host_status -eq 23 ]] || { printf '%s\n' 'host-supplied legacy marker selected direct nvim' >&2; exit 1; }
 mapfile -t runtime_argv < "$runtime_log"
 [[ ${runtime_argv[0]} == --apptainer \
-  && ${runtime_argv[1]} == --ct-bind \
-  && ${runtime_argv[2]} == "$home/.local/share/msk_containers/npm-global:/opt/msk/npm-global" ]] || {
-  printf '%s\n' 'host invocation did not delegate to the configured container launcher' >&2; exit 1;
+  && ${runtime_argv[1]} == --ct-instance-root \
+  && ${runtime_argv[2]} == "$home/.local/share/mkchad/tmp/container-instances" \
+  && ${runtime_argv[3]} == --ct-bind \
+  && ${runtime_argv[4]} == "$home/.local/share/msk_containers/npm-global:/opt/msk/npm-global" ]] || {
+  printf '%s\n' 'host invocation did not delegate to the persistent container launcher' >&2; exit 1;
 }
-[[ ${runtime_argv[3]} == --ct-env && ${runtime_argv[4]} == MKCHAD_NVIM_IMAGE=1 \
-  && ${runtime_argv[5]} == --ct-env && ${runtime_argv[6]} == NVIM_APPNAME=mkchad \
-  && ${runtime_argv[7]} == --ct-env && ${runtime_argv[8]} == "XDG_CONFIG_HOME=$config" \
-  && ${runtime_argv[9]} == --ct-env && ${runtime_argv[10]} == "XDG_STATE_HOME=$state_default" \
-  && ${runtime_argv[11]} == --ct-env && ${runtime_argv[12]} == "XDG_RUNTIME_DIR=$home/.local/share/mkchad/tmp" \
-  && ${runtime_argv[13]} == --ct-env && ${runtime_argv[14]} == "XDG_CACHE_HOME=$home/.local/cache" \
-  && ${runtime_argv[15]} == --ct-env && ${runtime_argv[16]} == MSK_NPM_GLOBAL_BASE=/opt/msk/npm-global \
-  && ${runtime_argv[17]} == --ct-env && ${runtime_argv[18]} == "OPENCODE_CONFIG=$config/mkchad/opencode.jsonc" ]] || {
+[[ ${runtime_argv[5]} == --ct-env && ${runtime_argv[6]} == MKCHAD_PERSISTENT_INSTANCE=1 \
+  && ${runtime_argv[7]} == --ct-env && ${runtime_argv[8]} == MKCHAD_NVIM_IMAGE=1 \
+  && ${runtime_argv[9]} == --ct-env && ${runtime_argv[10]} == NVIM_APPNAME=mkchad \
+  && ${runtime_argv[11]} == --ct-env && ${runtime_argv[12]} == "XDG_CONFIG_HOME=$config" \
+  && ${runtime_argv[13]} == --ct-env && ${runtime_argv[14]} == "XDG_STATE_HOME=$state_default" \
+  && ${runtime_argv[15]} == --ct-env && ${runtime_argv[16]} == "XDG_RUNTIME_DIR=$home/.local/share/mkchad/tmp" \
+  && ${runtime_argv[17]} == --ct-env && ${runtime_argv[18]} == "XDG_CACHE_HOME=$home/.local/cache" \
+  && ${runtime_argv[19]} == --ct-env && ${runtime_argv[20]} == MSK_NPM_GLOBAL_BASE=/opt/msk/npm-global \
+  && ${runtime_argv[21]} == --ct-env && ${runtime_argv[22]} == "OPENCODE_CONFIG=$config/mkchad/opencode.jsonc" ]] || {
   printf '%s\n' 'host invocation changed the MkChad image environment' >&2; exit 1;
 }
-[[ ${runtime_argv[19]} == --ct-bootstrap && ${runtime_argv[20]} == "$bin/mkchad-container-bootstrap" ]] || {
+[[ ${runtime_argv[23]} == --ct-bootstrap && ${runtime_argv[24]} == "$bin/mkchad-container-bootstrap" ]] || {
   printf '%s\n' 'host invocation did not select the MkChad container bootstrap' >&2; exit 1;
 }
-[[ ${runtime_argv[21]} == -- && ${runtime_argv[22]} == "$image" \
-  && ${runtime_argv[23]} == "$installed_image_command" \
-  && ${runtime_argv[24]} == status && ${runtime_argv[25]} == --json ]] || {
+[[ ${runtime_argv[25]} == -- && ${runtime_argv[26]} == "$image" \
+  && ${runtime_argv[27]} == "$installed_image_command" \
+  && ${runtime_argv[28]} == status && ${runtime_argv[29]} == --json ]] || {
   printf '%s\n' 'host invocation changed the image lifecycle entrypoint' >&2; exit 1;
 }
-[[ ${runtime_argv[26]} == "mount_config=$mount_config" ]] || {
+[[ ${runtime_argv[30]} == "mount_config=$mount_config" ]] || {
   printf '%s\n' 'host invocation did not preserve container mount configuration' >&2; exit 1;
 }
 [[ ! -e $nvim_log ]] || { printf '%s\n' 'host invocation ran native nvim' >&2; exit 1; }
+
+rm "$runtime_log"
+set +e
+env -u SINGULARITY_CONTAINER -u APPTAINER_CONTAINER "${base_env[@]}" \
+  "$installed_mkchad" 'file with spaces' >"$work/mkchad.out"
+mkchad_status=$?
+set -e
+[[ $mkchad_status -eq 23 ]] || { printf '%s\n' 'MkChad launcher did not preserve instance payload status' >&2; exit 1; }
+mapfile -t mkchad_runtime_argv < "$runtime_log"
+[[ ${mkchad_runtime_argv[0]} == --apptainer \
+  && ${mkchad_runtime_argv[1]} == --ct-instance-root \
+  && ${mkchad_runtime_argv[2]} == "$home/.local/share/mkchad/tmp/container-instances" \
+  && ${mkchad_runtime_argv[5]} == --ct-env \
+  && ${mkchad_runtime_argv[6]} == MKCHAD_PERSISTENT_INSTANCE=1 \
+  && ${mkchad_runtime_argv[19]} == --ct-bootstrap \
+  && ${mkchad_runtime_argv[20]} == "$bin/mkchad-container-bootstrap" \
+  && ${mkchad_runtime_argv[21]} == -- \
+  && ${mkchad_runtime_argv[22]} == "$image" \
+  && ${mkchad_runtime_argv[23]} == nvim \
+  && ${mkchad_runtime_argv[24]} == 'file with spaces' ]] || {
+  printf '%s\n' 'MkChad launcher did not use the shared persistent instance contract' >&2; exit 1;
+}
 
 custom_state="$work/state root"
 mkdir -p "$custom_state"
@@ -117,13 +143,13 @@ set -e
 [[ $custom_status -eq 23 ]] || { printf '%s\n' 'custom state host invocation did not preserve container status' >&2; exit 1; }
 mapfile -t custom_runtime_argv < "$runtime_log"
 [[ ${custom_runtime_argv[0]} == --apptainer \
-  && ${custom_runtime_argv[1]} == --ct-bind \
-  && ${custom_runtime_argv[2]} == "$home/.local/share/msk_containers/npm-global:/opt/msk/npm-global" \
   && ${custom_runtime_argv[3]} == --ct-bind \
-  && ${custom_runtime_argv[4]} == "$custom_state:$custom_state" \
-  && ${custom_runtime_argv[11]} == --ct-env \
-  && ${custom_runtime_argv[12]} == "XDG_STATE_HOME=$custom_state" \
-  && ${custom_runtime_argv[26]} == start && ${custom_runtime_argv[27]} == --json ]] || {
+  && ${custom_runtime_argv[4]} == "$home/.local/share/msk_containers/npm-global:/opt/msk/npm-global" \
+  && ${custom_runtime_argv[5]} == --ct-bind \
+  && ${custom_runtime_argv[6]} == "$custom_state:$custom_state" \
+  && ${custom_runtime_argv[15]} == --ct-env \
+  && ${custom_runtime_argv[16]} == "XDG_STATE_HOME=$custom_state" \
+  && ${custom_runtime_argv[30]} == start && ${custom_runtime_argv[31]} == --json ]] || {
   printf '%s\n' 'custom state root was not forwarded and bound identically' >&2; exit 1;
 }
 
@@ -172,6 +198,37 @@ compatibility_status=$?
 set -e
 [[ $compatibility_status -eq 19 && -e $nvim_log && ! -e $runtime_log ]] || {
   printf '%s\n' 'public launcher did not preserve in-container compatibility without nesting' >&2; exit 1;
+}
+
+rm "$nvim_log"
+set +e
+env "${base_env[@]}" SINGULARITY_CONTAINER="$image" MKCHAD_NVIM_IMAGE=1 \
+  "$installed_wrapper" start --json >"$work/foreground-start.out" 2>"$work/foreground-start.err"
+foreground_start_status=$?
+set -e
+[[ $foreground_start_status -eq 1 && $(<"$work/foreground-start.err") == *'detached start requires the managed persistent container instance'* \
+  && ! -e $nvim_log && ! -e $runtime_log ]] || {
+  printf '%s\n' 'foreground container start did not fail before lifecycle execution' >&2; exit 1;
+}
+
+set +e
+env "${base_env[@]}" SINGULARITY_CONTAINER="$image" MKCHAD_NVIM_IMAGE=1 \
+  "$installed_image_command" start --json >"$work/direct-foreground-start.out" 2>"$work/direct-foreground-start.err"
+direct_foreground_start_status=$?
+set -e
+[[ $direct_foreground_start_status -eq 1 \
+  && $(<"$work/direct-foreground-start.err") == *'detached start requires the managed persistent container instance'* \
+  && ! -e $nvim_log ]] || {
+  printf '%s\n' 'in-image companion allowed detached start without mount authority' >&2; exit 1;
+}
+
+set +e
+env "${base_env[@]}" SINGULARITY_CONTAINER="$image" MKCHAD_NVIM_IMAGE=1 MKCHAD_PERSISTENT_INSTANCE=1 \
+  "$installed_image_command" start --json
+managed_start_status=$?
+set -e
+[[ $managed_start_status -eq 19 && -e $nvim_log ]] || {
+  printf '%s\n' 'managed instance marker did not authorize in-image start' >&2; exit 1;
 }
 
 mkdir -p "$work/no-runtime-tools"

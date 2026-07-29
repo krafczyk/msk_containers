@@ -21,6 +21,9 @@ die() {
 container_signal=${SINGULARITY_CONTAINER:-${APPTAINER_CONTAINER:-}}
 [[ -n $container_signal && ( ${MKCHAD_NVIM_IMAGE:-} == 1 || ${container_signal##*/} == neovim.sif ) ]] || \
   die "this command must run inside the active MkChad image"
+if [[ ${1:-} == start && ${MKCHAD_PERSISTENT_INSTANCE:-} != 1 ]]; then
+  die "detached start requires the managed persistent container instance"
+fi
 [[ -f $entrypoint ]] || die "installed MkChad lifecycle entrypoint is missing: $entrypoint"
 [[ -r $entrypoint ]] || die "installed MkChad lifecycle entrypoint is not readable: $entrypoint"
 

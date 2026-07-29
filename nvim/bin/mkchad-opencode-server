@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# Enter the active Neovim image through the standard container-tools launcher,
-# then delegate to the in-image lifecycle command. Keep diagnostics on stderr:
+# Enter the active Neovim image through a persistent runtime instance, then
+# delegate to the in-image lifecycle command. Keep diagnostics on stderr:
 # --json is a strict protocol consumed by the editor adapter.
 set -euo pipefail
 
@@ -31,6 +31,9 @@ die() {
 container_signal=${SINGULARITY_CONTAINER:-${APPTAINER_CONTAINER:-}}
 if [[ -n $container_signal && ( ${MKCHAD_NVIM_IMAGE:-} == 1 || ${container_signal##*/} == neovim.sif ) ]]; then
   # Compatibility for MkChad revisions that still call the public launcher.
+  if [[ ${1:-} == start && ${MKCHAD_PERSISTENT_INSTANCE:-} != 1 ]]; then
+    die "detached start requires the managed persistent container instance"
+  fi
   exec "$image_command" "$@"
 fi
 
@@ -41,8 +44,8 @@ elif command -v singularity >/dev/null 2>&1; then
 else
   die "neither Apptainer nor SingularityCE is available"
 fi
-container_launcher="$script_dir/ct_exec.sh"
-[[ -x $container_launcher ]] || die "container tools launcher is missing or not executable: $container_launcher"
+container_launcher="$script_dir/ct_instance_exec.sh"
+[[ -x $container_launcher ]] || die "persistent container launcher is missing or not executable: $container_launcher"
 
 container_dir=${NVIM_CONTAINER_DIR:-"$HOME/containers"}
 image=${NVIM_CONT_LOCATION:-"$container_dir/neovim.sif"}
@@ -65,8 +68,10 @@ esac
 mkdir -p -- "$runtime_dir" "$cache_dir" "$npm_base"
 
 exec "$container_launcher" "--$runtime" \
+  --ct-instance-root "$runtime_dir/container-instances" \
   --ct-bind "$npm_base:$npm_container_base" \
   "${state_bind[@]}" \
+  --ct-env "MKCHAD_PERSISTENT_INSTANCE=1" \
   --ct-env "MKCHAD_NVIM_IMAGE=1" \
   --ct-env "NVIM_APPNAME=mkchad" \
   --ct-env "XDG_CONFIG_HOME=$config_home" \

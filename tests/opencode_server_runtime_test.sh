@@ -91,6 +91,26 @@ installed_image="$home/.local/bin/mkchad-opencode-server-image"
   exit 1
 }
 
+instance_name=
+instance_root="$home/.local/share/mkchad/tmp/container-instances"
+cleanup() {
+  local identity
+  local key
+  local value
+  local cleanup_name
+  for identity in "$instance_root"/mkchad-*.identity; do
+    [[ -f $identity ]] || continue
+    cleanup_name=
+    while IFS='=' read -r key value; do
+      [[ $key != name ]] || cleanup_name=$value
+    done < "$identity"
+    if [[ $cleanup_name =~ ^mkchad-[0-9a-f]{32}$ ]]; then
+      "$runtime" instance stop "$cleanup_name" >/dev/null 2>&1 || true
+    fi
+  done
+}
+trap cleanup EXIT
+
 runtime_version=$("$runtime" --version 2>&1 || true)
 runtime_version=${runtime_version//$'\n'/ }
 runtime_version=${runtime_version:0:200}
@@ -119,9 +139,27 @@ state_file="$state/mkchad/opencode/$host/state.json"
 control_file="$state/mkchad/opencode/$host/control.sock"
 
 # Each call below is a separate host invocation of the installed public wrapper.
+set +e
 run_command start --json > "$work/start-1.json"
+initial_start_status=$?
+set -e
+identity_files=("$instance_root"/mkchad-*.identity)
+if [[ ${#identity_files[@]} -eq 1 && -f ${identity_files[0]} ]]; then
+  while IFS='=' read -r key value; do
+    [[ $key != name ]] || instance_name=$value
+  done < "${identity_files[0]}"
+fi
+[[ $initial_start_status -eq 0 ]] || { printf '%s\n' 'initial runtime start failed' >&2; exit 1; }
 expect_json "$work/start-1.json" start healthy
 [[ -f $state_file && -S $control_file ]] || { printf '%s\n' 'start did not publish schema-4 state and control socket' >&2; exit 1; }
+identity_files=("$instance_root"/mkchad-*.identity)
+[[ ${#identity_files[@]} -eq 1 && -f ${identity_files[0]} ]] || {
+  printf '%s\n' 'start did not record exactly one isolated persistent instance' >&2; exit 1;
+}
+[[ $instance_name =~ ^mkchad-[0-9a-f]{32}$ ]] || { printf '%s\n' 'persistent instance name is invalid' >&2; exit 1; }
+"$runtime" exec "instance://$instance_name" /bin/true || {
+  printf '%s\n' 'persistent instance is unavailable after the start manager exited' >&2; exit 1;
+}
 generation=$(json_field "$work/start-1.json" state.generation)
 control_inode=$(stat -c '%d:%i' -- "$control_file")
 backend_pid=$(json_field "$state_file" backend.pid)
@@ -149,6 +187,8 @@ expect_json "$work/start-2.json" start healthy
   printf 'control_inode=%s\n' "$control_inode"
   printf 'broker_pid=%s\n' "$broker_pid"
   printf 'backend_pid=%s\n' "$backend_pid"
+  printf 'instance_name=%s\n' "$instance_name"
+  printf 'instance_persisted_after_manager=yes\n'
   printf 'generation_reused=yes\ncontrol_inode_stable=yes\nprocfs_denied=yes\n'
 } >> "$work/evidence/runtime.txt"
 
@@ -174,7 +214,10 @@ expect_json "$work/stop-1.json" stop inactive
 [[ ! -e $state_file && ! -e $control_file ]] || {
   printf '%s\n' 'state or control socket was removed before receipt-gated broker completion' >&2; exit 1;
 }
-printf 'brokered_status=yes\npublic_quiesce_before_pidfd=yes\nreceipt_gated_cleanup=yes\n' >> "$work/evidence/runtime.txt"
+"$runtime" exec "instance://$instance_name" /bin/true || {
+  printf '%s\n' 'safe server stop unexpectedly destroyed the shared runtime instance' >&2; exit 1;
+}
+printf 'brokered_status=yes\npublic_quiesce_before_pidfd=yes\nreceipt_gated_cleanup=yes\ninstance_retained_after_server_stop=yes\n' >> "$work/evidence/runtime.txt"
 
 # Recreate a generation, then exercise the documented broker/backend death
 # matrix from separate host status calls. Forced kills are confined to PIDs from
@@ -184,7 +227,7 @@ run_command start --json > "$work/start-3.json"
 expect_json "$work/start-3.json" start healthy
 backend_pid=$(json_field "$state_file" backend.pid)
 broker_pid=$(json_field "$state_file" proxy.pid)
-"$runtime" exec "$image" /bin/kill -KILL "$backend_pid"
+"$runtime" exec "instance://$instance_name" /bin/kill -KILL "$backend_pid"
 run_command status --json > "$work/backend-dead.json"
 [[ $(json_field "$work/backend-dead.json" status) == unhealthy ]] || {
   printf '%s\n' 'broker-live/backend-dead was not reported unhealthy' >&2; exit 1;
@@ -196,12 +239,12 @@ run_command start --json > "$work/start-4.json"
 expect_json "$work/start-4.json" start healthy
 backend_pid=$(json_field "$state_file" backend.pid)
 broker_pid=$(json_field "$state_file" proxy.pid)
-"$runtime" exec "$image" /bin/kill -KILL "$broker_pid"
+"$runtime" exec "instance://$instance_name" /bin/kill -KILL "$broker_pid"
 run_command status --json > "$work/broker-dead.json"
 [[ $(json_field "$work/broker-dead.json" status) == blocked ]] || {
   printf '%s\n' 'broker-dead/backend-live was not reported blocked' >&2; exit 1;
 }
-"$runtime" exec "$image" /bin/kill -KILL "$backend_pid"
+"$runtime" exec "instance://$instance_name" /bin/kill -KILL "$backend_pid"
 run_command stop --json > "$work/both-dead-stop.json"
 expect_json "$work/both-dead-stop.json" stop inactive
 printf 'broker_backend_death_matrix=yes\nprocesses_observed=broker,backend\n' >> "$work/evidence/runtime.txt"
