@@ -207,10 +207,41 @@ done
 
 x86="$repo/nvim/x86/nvim_container_x86.dockerfile"
 arm="$repo/nvim/aarch64/nvim_container_aarch64.dockerfile"
+manifest="$repo/nvim/component-manifest.json"
 x86_opencode_sha256=0798af8d5a1295da0c22340c012de529ed56734a203a32de088eedd3772af8df
 arm_opencode_sha256=df9e85d844cfe2a138f859c7f3592c8de72070e124fb41371a3c6fb58a4faa57
 x86_definition="$repo/nvim/x86/nvim_container_x86.def"
 arm_definition="$repo/nvim/aarch64/nvim_container_aarch64.def"
+
+python3 - "$manifest" "$x86" "$arm" <<'PY'
+import json
+import re
+import sys
+
+manifest_path, *dockerfile_paths = sys.argv[1:]
+manifest = json.load(open(manifest_path, encoding="utf-8"))
+assert manifest["schema"] == 1
+assert manifest["component_id"] == "nvim-image"
+assert manifest["build_id"] == "nvim-0.12.4-node-24.18.0-opencode-1.18.3-mkchad.7"
+ships = manifest["relationships"]
+assert 1 <= len(ships) <= 8
+assert all(item["type"] == "ships" and item["contract"]["suffix_policy"] == "literal" for item in ships)
+assert len({item["id"] for item in ships}) == len(ships)
+versions = {item["target_component"]: item["contract"]["version"] for item in ships}
+assert versions == {
+    "prereq-neovim": "0.12.4",
+    "prereq-node": "24.18.0",
+    "opencode": "1.18.3-mkchad.7",
+}
+for path in dockerfile_paths:
+    text = open(path, encoding="utf-8").read()
+    assert "COPY component-manifest.json /usr/share/mkchad/component-manifest.json" in text
+    assert re.search(r"ARG OPENCODE_VERSION=" + re.escape(versions["opencode"]) + r"(?:\n|\r\n)", text)
+    assert re.search(r"ENV NODE_VER=" + re.escape(versions["prereq-node"]) + r"(?:\n|\r\n)", text)
+    assert "--branch v" + versions["prereq-neovim"] in text
+PY
+assert_active "$repo/nvim/x86/nvim_container_x86_build_docker.sh" '-f "$nvim_dir/x86/nvim_container_x86.dockerfile"'
+assert_active "$repo/nvim/aarch64/nvim_container_aarch64_build_docker.sh" '-f "$nvim_dir/aarch64/nvim_container_aarch64.dockerfile"'
 
 x86_luals_build=$(printf '%s\n' \
   "RUN git clone --depth 1 --branch 3.17.1 https://github.com/LuaLS/lua-language-server /nvim/lua-language-server && \\" \

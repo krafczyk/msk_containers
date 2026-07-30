@@ -12,8 +12,11 @@ config="$work/config"
 state_default="$home/.local/state"
 fake="$work/fake-bin"
 bin="$home/.local/bin"
-image="$work/neovim.sif"
+container_dir="$home/containers"
+image_target="$container_dir/neovim_test.sif"
+image="$container_dir/neovim.sif"
 runtime_log="$work/runtime.log"
+status_log="$home/runtime.log"
 nvim_log="$work/nvim.log"
 installed_wrapper="$bin/mkchad-opencode-server"
 installed_image_command="$bin/mkchad-opencode-server-image"
@@ -21,14 +24,21 @@ installed_mkchad="$bin/mkchad"
 mount_config="$work/ct_mount.conf"
 repo=${wrapper%/nvim/bin/mkchad-opencode-server}
 installer="$repo/bin/install_nvim.sh"
-mkdir -p "$home" "$config/mkchad/lua/mkchad/opencode" "$fake"
+mkdir -p "$home" "$config/mkchad/lua/mkchad/opencode" "$fake" "$container_dir"
 : > "$config/mkchad/lua/mkchad/opencode/command.lua"
-: > "$image"
+chmod 700 "$container_dir"
+: > "$image_target"
+chmod 600 "$image_target"
+ln -s "${image_target##*/}" "$image"
 : > "$mount_config"
 HOME="$home" "$installer" >/dev/null
 
 cat > "$fake/apptainer" <<'EOF'
 #!/usr/bin/env bash
+if [[ ${1:-} == --version ]]; then
+  printf '%s\n' 'apptainer version 1.3.6'
+  exit 0
+fi
 exit 64
 EOF
 cat > "$bin/ct_instance_exec.sh" <<'EOF'
@@ -36,6 +46,11 @@ cat > "$bin/ct_instance_exec.sh" <<'EOF'
 printf '%s\n' "$@" > "$MKCHAD_TEST_RUNTIME_LOG"
 printf 'mount_config=%s\n' "${CT_MOUNT_CFG:-}" >> "$MKCHAD_TEST_RUNTIME_LOG"
 exit 23
+EOF
+cat > "$bin/ct_exec.sh" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$HOME/runtime.log"
+exit 29
 EOF
 cat > "$fake/nvim" <<'EOF'
 #!/usr/bin/env bash
@@ -48,7 +63,7 @@ cat > "$fake/node" <<'EOF'
 [[ ${1:-} == -p ]] || exit 64
 printf '%s\n' 'linux-x64-node24'
 EOF
-chmod 755 "$fake/apptainer" "$fake/nvim" "$fake/node" "$bin/ct_instance_exec.sh"
+chmod 755 "$fake/apptainer" "$fake/nvim" "$fake/node" "$bin/ct_instance_exec.sh" "$bin/ct_exec.sh"
 
 base_env=(
   "HOME=$home"
@@ -77,40 +92,146 @@ set +e
 env -u SINGULARITY_CONTAINER -u APPTAINER_CONTAINER -u XDG_STATE_HOME "${base_env[@]}" MKCHAD_NVIM_CONTAINER=1 "$installed_wrapper" status --json
 host_status=$?
 set -e
-[[ $host_status -eq 23 ]] || { printf '%s\n' 'host-supplied legacy marker selected direct nvim' >&2; exit 1; }
-mapfile -t runtime_argv < "$runtime_log"
+[[ $host_status -eq 29 ]] || { printf '%s\n' 'status did not use the foreground container executor' >&2; exit 1; }
+mapfile -t runtime_argv < "$status_log"
 [[ ${runtime_argv[0]} == --apptainer \
-  && ${runtime_argv[1]} == --ct-instance-root \
-  && ${runtime_argv[2]} == "$home/.local/share/mkchad/tmp/container-instances" \
-  && ${runtime_argv[3]} == --ct-bind \
-  && ${runtime_argv[4]} == "$home/.local/share/msk_containers/npm-global:/opt/msk/npm-global" ]] || {
-  printf '%s\n' 'host invocation did not delegate to the persistent container launcher' >&2; exit 1;
+  && ${runtime_argv[1]} == --ct-bind && ${runtime_argv[2]} == "$config:$config:ro" \
+  && ${runtime_argv[3]} == --ct-env && ${runtime_argv[4]} == HOME=/nonexistent \
+  && ${runtime_argv[5]} == --ct-env && ${runtime_argv[6]} == MKCHAD_NVIM_IMAGE=1 \
+  && ${runtime_argv[7]} == --ct-env && ${runtime_argv[8]} == NVIM_APPNAME=mkchad \
+  && ${runtime_argv[9]} == --ct-env && ${runtime_argv[10]} == "XDG_CONFIG_HOME=$config" \
+  && ${runtime_argv[11]} == --ct-env && ${runtime_argv[12]} == "XDG_STATE_HOME=$state_default" \
+  && ${runtime_argv[13]} == --ct-env && ${runtime_argv[14]} == "XDG_CACHE_HOME=$home/.local/cache" \
+  && ${runtime_argv[15]} == --ct-env && ${runtime_argv[16]} == MSK_NPM_GLOBAL_BASE=/opt/msk/npm-global \
+  && ${runtime_argv[17]} == --ct-bootstrap && ${runtime_argv[18]} == "$bin/mkchad-container-bootstrap" \
+  && ${runtime_argv[19]} == -- && ${runtime_argv[20]} == "$image" \
+  && ${runtime_argv[21]} == "$installed_image_command" && ${runtime_argv[22]} == status \
+  && ${runtime_argv[23]} == --json && ${runtime_argv[24]} == --host-evidence-v1 ]] || {
+  printf '%s\n' 'status foreground transport argv changed' >&2; exit 1;
 }
-[[ ${runtime_argv[5]} == --ct-env && ${runtime_argv[6]} == MKCHAD_PERSISTENT_INSTANCE=1 \
-  && ${runtime_argv[7]} == --ct-env && ${runtime_argv[8]} == MKCHAD_NVIM_IMAGE=1 \
-  && ${runtime_argv[9]} == --ct-env && ${runtime_argv[10]} == NVIM_APPNAME=mkchad \
-  && ${runtime_argv[11]} == --ct-env && ${runtime_argv[12]} == "XDG_CONFIG_HOME=$config" \
-  && ${runtime_argv[13]} == --ct-env && ${runtime_argv[14]} == "XDG_STATE_HOME=$state_default" \
-  && ${runtime_argv[15]} == --ct-env && ${runtime_argv[16]} == "XDG_RUNTIME_DIR=$home/.local/share/mkchad/tmp" \
-  && ${runtime_argv[17]} == --ct-env && ${runtime_argv[18]} == "XDG_CACHE_HOME=$home/.local/cache" \
-  && ${runtime_argv[19]} == --ct-env && ${runtime_argv[20]} == MSK_NPM_GLOBAL_BASE=/opt/msk/npm-global \
-  && ${runtime_argv[21]} == --ct-env && ${runtime_argv[22]} == "OPENCODE_CONFIG=$config/mkchad/opencode.jsonc" ]] || {
-  printf '%s\n' 'host invocation changed the MkChad image environment' >&2; exit 1;
-}
-[[ ${runtime_argv[23]} == --ct-bootstrap && ${runtime_argv[24]} == "$bin/mkchad-container-bootstrap" ]] || {
-  printf '%s\n' 'host invocation did not select the MkChad container bootstrap' >&2; exit 1;
-}
-[[ ${runtime_argv[25]} == -- && ${runtime_argv[26]} == "$image" \
-  && ${runtime_argv[27]} == "$installed_image_command" \
-  && ${runtime_argv[28]} == status && ${runtime_argv[29]} == --json ]] || {
-  printf '%s\n' 'host invocation changed the image lifecycle entrypoint' >&2; exit 1;
-}
-[[ ${runtime_argv[30]} == "mount_config=$mount_config" ]] || {
-  printf '%s\n' 'host invocation did not preserve container mount configuration' >&2; exit 1;
+python3 - "${runtime_argv[25]}" <<'PY'
+import base64
+import json
+import sys
+
+encoded = sys.argv[1]
+assert len(encoded) <= 6144 and "=" not in encoded
+payload = json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)))
+assert payload["schema"] == 1
+assert payload["container_runtime"]["state"] == "present"
+assert payload["container_runtime"]["family"] == "apptainer"
+assert payload["selected_image"]["identity_kind"] == "host-file-stat-v1"
+assert payload["persisted_instance"] == {"state": "absent"}
+assert all("/" not in str(value) for value in payload.values())
+PY
+[[ ! -e $state_default && ! -e $home/.local/cache && ! -e $home/.local/share/mkchad ]] || {
+  printf '%s\n' 'clean-home status created mutable runtime state' >&2; exit 1;
 }
 [[ ! -e $nvim_log ]] || { printf '%s\n' 'host invocation ran native nvim' >&2; exit 1; }
 
-rm "$runtime_log"
+helper="$bin/mkchad-status-host-evidence"
+instance_root="$home/.local/share/mkchad/tmp/container-instances"
+mkdir -p "$instance_root"
+chmod 700 "$instance_root"
+record="$instance_root/mkchad-0123456789abcdef0123456789abcdef.identity"
+record_identity=$(LC_ALL=C stat -Lc '%d:%i:%s:%y:%z' -- "$image_target")
+printf 'name=mkchad-0123456789abcdef0123456789abcdef\nimage=%s\nidentity=%s\n' \
+  "$image_target" "$record_identity" > "$record"
+chmod 600 "$record"
+record_before=$(LC_ALL=C stat -Lc '%d:%i:%s:%y:%z' -- "$record")
+record_bytes=$(base64 -w 0 < "$record")
+evidence=$(env "${base_env[@]}" "$helper" --runtime apptainer --runtime-executable "$fake/apptainer" --image "$image" \
+  --container-dir "$container_dir" --instance-root "$instance_root")
+python3 - "$evidence" <<'PY'
+import base64
+import json
+import sys
+
+payload = json.loads(base64.urlsafe_b64decode(sys.argv[1] + "=" * (-len(sys.argv[1]) % 4)))
+assert payload["persisted_instance"]["state"] == "present"
+assert payload["persisted_instance"]["label"] == "mkchad-0123456789abcdef0123456789abcdef"
+assert payload["persisted_instance"]["identity_kind"] == "host-file-stat-v1"
+assert "/" not in str(payload["persisted_instance"])
+PY
+[[ $(LC_ALL=C stat -Lc '%d:%i:%s:%y:%z' -- "$record") == "$record_before" \
+  && $(base64 -w 0 < "$record") == "$record_bytes" ]] || {
+  printf '%s\n' 'status evidence rewrote existing instance metadata' >&2; exit 1;
+}
+
+image_target_rotated="$container_dir/neovim_rotated.sif"
+: > "$image_target_rotated"
+chmod 600 "$image_target_rotated"
+ln -sfn "${image_target_rotated##*/}" "$image"
+evidence=$(env "${base_env[@]}" "$helper" --runtime apptainer --runtime-executable "$fake/apptainer" --image "$image" \
+  --container-dir "$container_dir" --instance-root "$instance_root")
+python3 - "$evidence" "$image_target_rotated" <<'PY'
+import base64
+import json
+import os
+import sys
+
+payload = json.loads(base64.urlsafe_b64decode(sys.argv[1] + "=" * (-len(sys.argv[1]) % 4)))
+expected = os.stat(sys.argv[2])
+assert payload["selected_image"]["identity_kind"] == "host-file-stat-v1"
+assert payload["selected_image"]["identity"].split(":", 3)[:3] == [str(expected.st_dev), str(expected.st_ino), str(expected.st_size)]
+PY
+
+chmod 770 "$instance_root"
+unsafe_evidence=$(env "${base_env[@]}" "$helper" --runtime apptainer --runtime-executable "$fake/apptainer" --image "$image" \
+  --container-dir "$container_dir" --instance-root "$instance_root")
+chmod 700 "$instance_root"
+chmod 666 "$image_target_rotated"
+unsafe_selector=$(env "${base_env[@]}" "$helper" --runtime apptainer --runtime-executable "$fake/apptainer" --image "$image" \
+  --container-dir "$container_dir" --instance-root "$instance_root")
+chmod 600 "$image_target_rotated"
+noncanonical_selector=$(env "${base_env[@]}" "$helper" --runtime apptainer --runtime-executable "$fake/apptainer" --image "$image_target_rotated" \
+  --container-dir "$container_dir" --instance-root "$instance_root")
+python3 - "$unsafe_evidence" "$unsafe_selector" "$noncanonical_selector" <<'PY'
+import base64
+import json
+import sys
+
+def read(value):
+    return json.loads(base64.urlsafe_b64decode(value + "=" * (-len(value) % 4)))
+
+assert read(sys.argv[1])["persisted_instance"] == {"state": "unavailable"}
+assert read(sys.argv[2])["selected_image"] == {"state": "unavailable"}
+assert read(sys.argv[3])["selected_image"] == {"state": "unavailable"}
+PY
+
+cat > "$fake/apptainer" <<'EOF'
+#!/usr/bin/env bash
+sleep 5
+EOF
+chmod 755 "$fake/apptainer"
+SECONDS=0
+set +e
+env -u SINGULARITY_CONTAINER -u APPTAINER_CONTAINER "${base_env[@]}" "$installed_wrapper" status --json
+timeout_status=$?
+set -e
+[[ $timeout_status -eq 29 && $SECONDS -lt 4 ]] || {
+  printf '%s\n' 'host evidence timeout did not preserve foreground status bounds' >&2; exit 1;
+}
+mapfile -t timeout_argv < "$status_log"
+python3 - "${timeout_argv[25]}" <<'PY'
+import base64
+import json
+import sys
+
+payload = json.loads(base64.urlsafe_b64decode(sys.argv[1] + "=" * (-len(sys.argv[1]) % 4)))
+assert all(value == {"state": "unavailable"} for key, value in payload.items() if key != "schema")
+PY
+cat > "$fake/apptainer" <<'EOF'
+#!/usr/bin/env bash
+if [[ ${1:-} == --version ]]; then
+  printf '%s\n' 'apptainer version 1.3.6'
+  exit 0
+fi
+exit 64
+EOF
+chmod 755 "$fake/apptainer"
+
+rm -f "$runtime_log"
 set +e
 env -u SINGULARITY_CONTAINER -u APPTAINER_CONTAINER "${base_env[@]}" \
   "$installed_mkchad" 'file with spaces' >"$work/mkchad.out"
@@ -159,9 +280,18 @@ env -u SINGULARITY_CONTAINER -u APPTAINER_CONTAINER "${base_env[@]}" \
   "XDG_STATE_HOME=$missing_state" "$installed_wrapper" status --json >"$work/missing-state.out" 2>"$work/missing-state.err"
 missing_state_status=$?
 set -e
-[[ $missing_state_status -eq 1 && $(<"$work/missing-state.err") == *'external XDG_STATE_HOME must be an existing directory for an identical host/image bind'* \
-  && ! -e $missing_state ]] || {
-  printf '%s\n' 'missing external state root did not fail with the identical-bind diagnostic' >&2; exit 1;
+[[ $missing_state_status -eq 29 && ! -e $missing_state ]] || {
+  printf '%s\n' 'status created or required a missing external state root' >&2; exit 1;
+}
+mapfile -t status_with_npm < "$status_log"
+npm_bind=0
+npm_env=0
+for ((index = 0; index < ${#status_with_npm[@]}; index++)); do
+  [[ ${status_with_npm[index]} != "$home/.local/share/msk_containers/npm-global:/opt/msk/npm-global:ro" ]] || npm_bind=1
+  [[ ${status_with_npm[index]} != MSK_NPM_GLOBAL_BASE=/opt/msk/npm-global ]] || npm_env=1
+done
+[[ $npm_bind == 1 && $npm_env == 1 ]] || {
+  printf '%s\n' 'status did not expose the existing npm prefix read-only' >&2; exit 1;
 }
 
 rm "$runtime_log"
@@ -202,7 +332,7 @@ set -e
 
 rm "$nvim_log"
 set +e
-env "${base_env[@]}" SINGULARITY_CONTAINER="$image" MKCHAD_NVIM_IMAGE=1 \
+env -u MKCHAD_PERSISTENT_INSTANCE "${base_env[@]}" SINGULARITY_CONTAINER="$image" MKCHAD_NVIM_IMAGE=1 \
   "$installed_wrapper" start --json >"$work/foreground-start.out" 2>"$work/foreground-start.err"
 foreground_start_status=$?
 set -e
@@ -212,7 +342,7 @@ set -e
 }
 
 set +e
-env "${base_env[@]}" SINGULARITY_CONTAINER="$image" MKCHAD_NVIM_IMAGE=1 \
+env -u MKCHAD_PERSISTENT_INSTANCE "${base_env[@]}" SINGULARITY_CONTAINER="$image" MKCHAD_NVIM_IMAGE=1 \
   "$installed_image_command" start --json >"$work/direct-foreground-start.out" 2>"$work/direct-foreground-start.err"
 direct_foreground_start_status=$?
 set -e

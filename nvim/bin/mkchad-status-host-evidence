@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+
+# Collect bounded scalar host observations for the in-image status command.
+# This intentionally never creates or repairs a selector or instance record.
+set -euo pipefail
+
+runtime=
+runtime_executable=
+image=
+container_dir=
+instance_root=
+
+usage() {
+  printf '%s\n' 'usage: mkchad-status-host-evidence --runtime RUNTIME --runtime-executable PATH --image IMAGE --container-dir DIR --instance-root DIR' >&2
+  exit 2
+}
+
+while (($#)); do
+  case "$1" in
+    --runtime) runtime=${2:-}; shift 2 ;;
+    --runtime-executable) runtime_executable=${2:-}; shift 2 ;;
+    --image) image=${2:-}; shift 2 ;;
+    --container-dir) container_dir=${2:-}; shift 2 ;;
+    --instance-root) instance_root=${2:-}; shift 2 ;;
+    *) usage ;;
+  esac
+done
+
+[[ $runtime =~ ^(apptainer|singularity)$ && $runtime_executable == /* && $image == /* \
+  && $container_dir == /* && $instance_root == /* ]] || usage
+
+stat_tuple() {
+  LC_ALL=C stat -Lc '%d:%i:%s:%y:%z' -- "$1" 2>/dev/null
+}
+
+safe_owner_mode() {
+  local path=$1
+  local expected_type=$2
+  local details uid mode type links
+
+  [[ ! -L $path ]] || return 1
+  details=$(LC_ALL=C stat -Lc '%u:%a:%F:%h' -- "$path" 2>/dev/null) || return 1
+  IFS=: read -r uid mode type links <<<"$details"
+  case "$expected_type" in
+    regular) [[ $type == regular* ]] ;;
+    *) [[ $type == "$expected_type" ]] ;;
+  esac || return 1
+  [[ $uid == "$UID" || $uid == 0 ]] || return 1
+  (( (8#$mode & 8#022) == 0 )) || return 1
+  [[ $expected_type != regular || $links == 1 ]] || return 1
+}
+
+safe_managed_image() {
+  local selector=$container_dir/neovim.sif
+  local root resolved raw before after link_details link_uid link_type
+
+  root=$(realpath -m -- "$container_dir") || return 1
+  [[ $selector == "$root/neovim.sif" ]] || return 1
+  [[ $image == "$selector" ]] || return 1
+  safe_owner_mode "$root" directory || return 1
+  [[ -L $selector ]] || return 1
+  link_details=$(LC_ALL=C stat -c '%u:%a:%F' -- "$selector" 2>/dev/null) || return 1
+  IFS=: read -r link_uid _ link_type <<<"$link_details"
+  [[ $link_type == 'symbolic link' && ( $link_uid == "$UID" || $link_uid == 0 ) ]] || return 1
+  raw=$(readlink -- "$selector") || return 1
+  if [[ $raw == /* ]]; then
+    resolved=$(realpath -m -- "$raw")
+  else
+    resolved=$(realpath -m -- "${selector%/*}/$raw")
+  fi
+  [[ ${resolved%/*} == "$root" ]] || return 1
+  safe_owner_mode "$resolved" regular || return 1
+  before=$(stat_tuple "$resolved") || return 1
+  [[ -f $image && $(realpath -m -- "$image") == "$resolved" ]] || return 1
+  after=$(stat_tuple "$resolved") || return 1
+  [[ $before == "$after" && $before =~ ^[0-9:.+\ -]{1,128}$ ]] || return 1
+  printf '%s\n' "$before"
+}
+
+runtime_observation() {
+  local executable resolved before after output version identity=
+
+  executable=$runtime_executable
+  resolved=$(realpath -- "$executable" 2>/dev/null) || return 1
+  safe_owner_mode "$resolved" regular || return 1
+  before=$(stat_tuple "$resolved") || return 1
+  output=$("$resolved" --version 2>/dev/null) || return 1
+  output=${output%%$'\n'*}
+  [[ $output =~ ([0-9]+([.][0-9A-Za-z]+)*([-+][0-9A-Za-z.-]+)?) ]] || return 1
+  version=${BASH_REMATCH[1]}
+  [[ ${#version} -le 128 ]] || return 1
+  after=$(stat_tuple "$resolved") || return 1
+  [[ $before == "$after" ]] || return 1
+  identity=$before
+  printf '%s\n%s\n' "$version" "$identity"
+}
+
+persisted_observation() {
+  local root record before after content line key value root_mode record_mode name='' identity='' image_value='' count=0
+
+  [[ ! -L $instance_root ]] || return 1
+  [[ -e $instance_root ]] || return 2
+  safe_owner_mode "$instance_root" directory || return 1
+  root_mode=$(LC_ALL=C stat -Lc '%a' -- "$instance_root" 2>/dev/null) || return 1
+  [[ $root_mode == 700 ]] || return 1
+  shopt -s nullglob
+  local records=("$instance_root"/*.identity)
+  shopt -u nullglob
+  ((${#records[@]} == 1)) || return 1
+  record=${records[0]}
+  [[ ${record##*/} =~ ^mkchad-[0-9a-f]{32}[.]identity$ ]] || return 1
+  safe_owner_mode "$record" regular || return 1
+  record_mode=$(LC_ALL=C stat -Lc '%a' -- "$record" 2>/dev/null) || return 1
+  [[ $record_mode == 600 ]] || return 1
+  before=$(stat_tuple "$record") || return 1
+  [[ $(LC_ALL=C stat -Lc '%s' -- "$record" 2>/dev/null) -le 1024 ]] || return 1
+  content=$(<"$record")
+  after=$(stat_tuple "$record") || return 1
+  [[ $before == "$after" ]] || return 1
+  while IFS= read -r line || [[ -n $line ]]; do
+    ((count += 1))
+    [[ $line == *=* ]] || return 1
+    key=${line%%=*}
+    value=${line#*=}
+    case "$key" in
+      name) [[ -z $name ]] || return 1; name=$value ;;
+      image) [[ -z $image_value ]] || return 1; image_value=$value ;;
+      identity) [[ -z $identity ]] || return 1; identity=$value ;;
+      *) return 1 ;;
+    esac
+  done <<<"$content"
+  [[ $count == 3 && $name =~ ^mkchad-[0-9a-f]{32}$ && $image_value == /* \
+    && $identity =~ ^[0-9:.+\ -]{1,128}$ ]] || return 1
+  printf '%s\n%s\n' "$name" "$identity"
+}
+
+container_runtime='{"state":"unavailable"}'
+if runtime_output=$(runtime_observation); then
+  mapfile -t runtime_values <<<"$runtime_output"
+  if ((${#runtime_values[@]} == 2)); then
+    container_runtime=$(printf '{"state":"present","family":"%s","version":"%s","executable_identity_kind":"host-file-stat-v1","executable_identity":"%s"}' \
+      "$runtime" "${runtime_values[0]}" "${runtime_values[1]}")
+  fi
+fi
+
+selected_image='{"state":"unavailable"}'
+if image_identity=$(safe_managed_image); then
+  selected_image=$(printf '{"state":"present","identity_kind":"host-file-stat-v1","identity":"%s"}' "$image_identity")
+fi
+
+persisted_instance='{"state":"unavailable"}'
+if persisted_output=$(persisted_observation); then
+  mapfile -t persisted_values <<<"$persisted_output"
+  if ((${#persisted_values[@]} == 2)); then
+    persisted_instance=$(printf '{"state":"present","label":"%s","identity_kind":"host-file-stat-v1","identity":"%s"}' \
+      "${persisted_values[0]}" "${persisted_values[1]}")
+  fi
+else
+  persisted_status=$?
+  [[ $persisted_status == 2 ]] && persisted_instance='{"state":"absent"}'
+fi
+
+payload=$(printf '{"schema":1,"container_runtime":%s,"selected_image":%s,"persisted_instance":%s}' \
+  "$container_runtime" "$selected_image" "$persisted_instance")
+(( ${#payload} <= 4096 )) || exit 1
+encoded=$(printf '%s' "$payload" | base64 -w 0 | tr '+/' '-_' | tr -d '=')
+(( ${#encoded} <= 6144 )) || exit 1
+printf '%s\n' "$encoded"

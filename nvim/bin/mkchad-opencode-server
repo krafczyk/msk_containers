@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# Enter the active Neovim image through a persistent runtime instance, then
-# delegate to the in-image lifecycle command. Keep diagnostics on stderr:
+# Enter the active Neovim image through foreground status or a persistent
+# runtime instance, then delegate to the in-image lifecycle command. Keep diagnostics on stderr:
 # --json is a strict protocol consumed by the editor adapter.
 set -euo pipefail
 
@@ -37,19 +37,65 @@ if [[ -n $container_signal && ( ${MKCHAD_NVIM_IMAGE:-} == 1 || ${container_signa
   exec "$image_command" "$@"
 fi
 
-if command -v apptainer >/dev/null 2>&1; then
+if runtime_executable=$(command -v apptainer 2>/dev/null); then
   runtime=apptainer
-elif command -v singularity >/dev/null 2>&1; then
+elif runtime_executable=$(command -v singularity 2>/dev/null); then
   runtime=singularity
 else
   die "neither Apptainer nor SingularityCE is available"
 fi
-container_launcher="$script_dir/ct_instance_exec.sh"
-[[ -x $container_launcher ]] || die "persistent container launcher is missing or not executable: $container_launcher"
-
 container_dir=${NVIM_CONTAINER_DIR:-"$HOME/containers"}
 image=${NVIM_CONT_LOCATION:-"$container_dir/neovim.sif"}
 [[ -f $image ]] || die "active Neovim image is missing: $image"
+
+if [[ ${1:-} == status ]]; then
+  foreground_launcher="$script_dir/ct_exec.sh"
+  evidence_collector="$script_dir/mkchad-status-host-evidence"
+  runtime_executable=$(realpath -- "$runtime_executable")
+  system_path=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+  status_path="${runtime_executable%/*}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+  [[ -x $foreground_launcher ]] || die "foreground container launcher is missing or not executable: $foreground_launcher"
+  [[ -x $evidence_collector ]] || die "host evidence collector is missing or not executable: $evidence_collector"
+
+  # The evidence collector has one combined budget and emits only validated
+  # scalar JSON encoded for argv transport.  A failed collection is explicit.
+  host_evidence=$(env -i PATH="$system_path" HOME=/nonexistent \
+    timeout --foreground --kill-after=1s 2s "$evidence_collector" \
+    --runtime "$runtime" --runtime-executable "$runtime_executable" \
+    --image "$image" --container-dir "$container_dir" \
+    --instance-root "$runtime_dir/container-instances" 2>/dev/null) || \
+    host_evidence=eyJzY2hlbWEiOjEsImNvbnRhaW5lcl9ydW50aW1lIjp7InN0YXRlIjoidW5hdmFpbGFibGUifSwic2VsZWN0ZWRfaW1hZ2UiOnsic3RhdGUiOiJ1bmF2YWlsYWJsZSJ9LCJwZXJzaXN0ZWRfaW5zdGFuY2UiOnsic3RhdGUiOiJ1bmF2YWlsYWJsZSJ9fQ
+
+  status_binds=()
+  for host_path in "$config_home" "$state_home" "$cache_dir"; do
+    [[ ! -e $host_path || -d $host_path ]] || die "status evidence path must be a directory: $host_path"
+    [[ ! -d $host_path ]] || status_binds+=(--ct-bind "$host_path:$host_path:ro")
+  done
+  if [[ -d $npm_base && ! -L $npm_base ]]; then
+    npm_mode=$(LC_ALL=C stat -Lc '%a' -- "$npm_base" 2>/dev/null) || npm_mode=
+    [[ -n $npm_mode && $((8#$npm_mode & 8#022)) -eq 0 ]] && \
+      status_binds+=(--ct-bind "$npm_base:$npm_container_base:ro")
+  fi
+
+  # Keep the host process environment narrow.  Status does not need the
+  # writable npm bind, persistent instance, lock, or runtime directories.
+  exec env -i PATH="$status_path" HOME="$HOME" USER="${USER:-$(id -un)}" \
+    CT_MOUNT_CFG="${CT_MOUNT_CFG:-$HOME/.config/ct_mount.conf}" \
+    "$foreground_launcher" "--$runtime" \
+    "${status_binds[@]}" \
+    --ct-env "HOME=/nonexistent" \
+    --ct-env "MKCHAD_NVIM_IMAGE=1" \
+    --ct-env "NVIM_APPNAME=mkchad" \
+    --ct-env "XDG_CONFIG_HOME=$config_home" \
+    --ct-env "XDG_STATE_HOME=$state_home" \
+    --ct-env "XDG_CACHE_HOME=$cache_dir" \
+    --ct-env "MSK_NPM_GLOBAL_BASE=$npm_container_base" \
+    --ct-bootstrap "$bootstrap" \
+    -- "$image" "$image_command" "$@" --host-evidence-v1 "$host_evidence"
+fi
+
+container_launcher="$script_dir/ct_instance_exec.sh"
+[[ -x $container_launcher ]] || die "persistent container launcher is missing or not executable: $container_launcher"
 
 # The runtime normally mounts HOME, which covers the default state root. A
 # custom root outside HOME must be visible at the same absolute path so separate

@@ -1,6 +1,8 @@
 # Use the pinned Fedora 43 multi-architecture base image
 FROM quay.io/fedora/fedora:43@sha256:d9c079f2727706bfe335fefae57c7518a84e97daf4b1bf9d50fb3e8a75e7e78c AS nvim_container_base
 
+COPY component-manifest.json /usr/share/mkchad/component-manifest.json
+
 # Update and install essential packages
 RUN dnf update -y && \
     dnf install -y wget git gcc gcc-c++ \
