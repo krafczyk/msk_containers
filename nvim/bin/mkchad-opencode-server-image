@@ -27,6 +27,11 @@ fi
 [[ -f $entrypoint ]] || die "installed MkChad lifecycle entrypoint is missing: $entrypoint"
 [[ -r $entrypoint ]] || die "installed MkChad lifecycle entrypoint is not readable: $entrypoint"
 
+if [[ ${1:-} == status ]]; then
+  # Status is observational; do not let Neovim create a fallback log in HOME.
+  export NVIM_LOG_FILE=/dev/null
+fi
+
 export NVIM_APPNAME=mkchad
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-$runtime_dir}"
 export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$cache_dir}"

@@ -15,6 +15,8 @@ state_home=${XDG_STATE_HOME:-"$HOME/.local/state"}
 # Host runtime directories under /run are not bind-mounted into the image.
 runtime_dir="$HOME/.local/share/mkchad/tmp"
 cache_dir=${XDG_CACHE_HOME:-"$HOME/.local/cache"}
+data_home=${XDG_DATA_HOME:-"$HOME/.local/share"}
+mkchad_data_dir="$data_home/mkchad"
 npm_base="$HOME/.local/share/msk_containers/npm-global"
 npm_container_base=/opt/msk/npm-global
 opencode_config="$config_root/opencode.jsonc"
@@ -71,6 +73,8 @@ if [[ ${1:-} == status ]]; then
     [[ ! -e $host_path || -d $host_path ]] || die "status evidence path must be a directory: $host_path"
     [[ ! -d $host_path ]] || status_binds+=(--ct-bind "$host_path:$host_path:ro")
   done
+  [[ ! -e $mkchad_data_dir || -d $mkchad_data_dir ]] || die "status MkChad data path must be a directory: $mkchad_data_dir"
+  [[ ! -d $mkchad_data_dir ]] || status_binds+=(--ct-bind "$mkchad_data_dir:$mkchad_data_dir:ro")
   if [[ -d $npm_base && ! -L $npm_base ]]; then
     npm_mode=$(LC_ALL=C stat -Lc '%a' -- "$npm_base" 2>/dev/null) || npm_mode=
     [[ -n $npm_mode && $((8#$npm_mode & 8#022)) -eq 0 ]] && \
@@ -79,19 +83,23 @@ if [[ ${1:-} == status ]]; then
 
   # Keep the host process environment narrow.  Status does not need the
   # writable npm bind, persistent instance, lock, or runtime directories.
+  # Do not inject HOME through Apptainer's environment bridge: it rejects that
+  # override. Restrict the isolated HOME and Neovim log sink to only the
+  # in-image lifecycle payload instead.
   exec env -i PATH="$status_path" HOME="$HOME" USER="${USER:-$(id -un)}" \
     CT_MOUNT_CFG="${CT_MOUNT_CFG:-$HOME/.config/ct_mount.conf}" \
     "$foreground_launcher" "--$runtime" \
     "${status_binds[@]}" \
-    --ct-env "HOME=/nonexistent" \
     --ct-env "MKCHAD_NVIM_IMAGE=1" \
     --ct-env "NVIM_APPNAME=mkchad" \
     --ct-env "XDG_CONFIG_HOME=$config_home" \
     --ct-env "XDG_STATE_HOME=$state_home" \
     --ct-env "XDG_CACHE_HOME=$cache_dir" \
+    --ct-env "XDG_DATA_HOME=$data_home" \
     --ct-env "MSK_NPM_GLOBAL_BASE=$npm_container_base" \
     --ct-bootstrap "$bootstrap" \
-    -- "$image" "$image_command" "$@" --host-evidence-v1 "$host_evidence"
+    -- "$image" /usr/bin/env HOME=/nonexistent \
+    "$image_command" "$@" --host-evidence-v1 "$host_evidence"
 fi
 
 container_launcher="$script_dir/ct_instance_exec.sh"

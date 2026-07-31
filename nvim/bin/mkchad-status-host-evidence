@@ -50,7 +50,7 @@ safe_owner_mode() {
   [[ $expected_type != regular || $links == 1 ]] || return 1
 }
 
-safe_managed_image() {
+managed_image_observation() {
   local selector=$container_dir/neovim.sif
   local root resolved raw before after link_details link_uid link_type
 
@@ -74,7 +74,7 @@ safe_managed_image() {
   [[ -f $image && $(realpath -m -- "$image") == "$resolved" ]] || return 1
   after=$(stat_tuple "$resolved") || return 1
   [[ $before == "$after" && $before =~ ^[0-9:.+\ -]{1,128}$ ]] || return 1
-  printf '%s\n' "$before"
+  printf '%s\n%s\n' "$resolved" "$before"
 }
 
 runtime_observation() {
@@ -96,42 +96,74 @@ runtime_observation() {
 }
 
 persisted_observation() {
-  local root record before after content line key value root_mode record_mode name='' identity='' image_value='' count=0
+  local selected_image=$1
+  local selected_identity=$2
+  local root_before root_after record before after content line key value root_mode record_mode name identity image_value count matches=0 matched_name=''
+  local record_name scan_fd scan_pid scan_overflow=0
+  local -a records=()
 
   [[ ! -L $instance_root ]] || return 1
   [[ -e $instance_root ]] || return 2
   safe_owner_mode "$instance_root" directory || return 1
   root_mode=$(LC_ALL=C stat -Lc '%a' -- "$instance_root" 2>/dev/null) || return 1
   [[ $root_mode == 700 ]] || return 1
-  shopt -s nullglob
-  local records=("$instance_root"/*.identity)
-  shopt -u nullglob
-  ((${#records[@]} == 1)) || return 1
-  record=${records[0]}
-  [[ ${record##*/} =~ ^mkchad-[0-9a-f]{32}[.]identity$ ]] || return 1
-  safe_owner_mode "$record" regular || return 1
-  record_mode=$(LC_ALL=C stat -Lc '%a' -- "$record" 2>/dev/null) || return 1
-  [[ $record_mode == 600 ]] || return 1
-  before=$(stat_tuple "$record") || return 1
-  [[ $(LC_ALL=C stat -Lc '%s' -- "$record" 2>/dev/null) -le 1024 ]] || return 1
-  content=$(<"$record")
-  after=$(stat_tuple "$record") || return 1
-  [[ $before == "$after" ]] || return 1
-  while IFS= read -r line || [[ -n $line ]]; do
-    ((count += 1))
-    [[ $line == *=* ]] || return 1
-    key=${line%%=*}
-    value=${line#*=}
-    case "$key" in
-      name) [[ -z $name ]] || return 1; name=$value ;;
-      image) [[ -z $image_value ]] || return 1; image_value=$value ;;
-      identity) [[ -z $identity ]] || return 1; identity=$value ;;
-      *) return 1 ;;
-    esac
-  done <<<"$content"
-  [[ $count == 3 && $name =~ ^mkchad-[0-9a-f]{32}$ && $image_value == /* \
-    && $identity =~ ^[0-9:.+\ -]{1,128}$ ]] || return 1
-  printf '%s\n%s\n' "$name" "$identity"
+  root_before=$(stat_tuple "$instance_root") || return 1
+
+  # Limit records and scan duration so stale history cannot turn status into an
+  # unbounded directory walk. The parent directory is rechecked below.
+  exec {scan_fd}< <(timeout --foreground --kill-after=1s 1s find "$instance_root" -mindepth 1 -maxdepth 1 -name 'mkchad-*.identity' -printf '%f\0')
+  scan_pid=$!
+  while IFS= read -r -d '' record_name <&"$scan_fd"; do
+    if ((${#records[@]} >= 64)); then
+      scan_overflow=1
+      break
+    fi
+    if [[ ! $record_name =~ ^mkchad-[0-9a-f]{32}[.]identity$ ]]; then
+      exec {scan_fd}<&-
+      wait "$scan_pid" 2>/dev/null || true
+      return 1
+    fi
+    records+=("$instance_root/$record_name")
+  done
+  exec {scan_fd}<&-
+  wait "$scan_pid" || return 1
+  [[ $scan_overflow == 0 ]] || return 1
+
+  for record in "${records[@]}"; do
+    safe_owner_mode "$record" regular || return 1
+    record_mode=$(LC_ALL=C stat -Lc '%a' -- "$record" 2>/dev/null) || return 1
+    [[ $record_mode == 600 ]] || return 1
+    before=$(stat_tuple "$record") || return 1
+    [[ $(LC_ALL=C stat -Lc '%s' -- "$record" 2>/dev/null) -le 1024 ]] || return 1
+    content=$(<"$record")
+    after=$(stat_tuple "$record") || return 1
+    [[ $before == "$after" ]] || return 1
+    name=
+    identity=
+    image_value=
+    count=0
+    while IFS= read -r line || [[ -n $line ]]; do
+      ((count += 1))
+      [[ $line == *=* ]] || return 1
+      key=${line%%=*}
+      value=${line#*=}
+      case "$key" in
+        name) [[ -z $name ]] || return 1; name=$value ;;
+        image) [[ -z $image_value ]] || return 1; image_value=$value ;;
+        identity) [[ -z $identity ]] || return 1; identity=$value ;;
+        *) return 1 ;;
+      esac
+    done <<<"$content"
+    [[ $count == 3 && $name =~ ^mkchad-[0-9a-f]{32}$ && $image_value == /* \
+      && $identity =~ ^[0-9:.+\ -]{1,128}$ ]] || return 1
+    [[ $image_value == "$selected_image" && $identity == "$selected_identity" ]] || continue
+    ((matches += 1))
+    matched_name=$name
+  done
+
+  root_after=$(stat_tuple "$instance_root") || return 1
+  [[ $root_before == "$root_after" && $matches == 1 ]] || return 1
+  printf '%s\n%s\n' "$matched_name" "$selected_identity"
 }
 
 container_runtime='{"state":"unavailable"}'
@@ -144,20 +176,35 @@ if runtime_output=$(runtime_observation); then
 fi
 
 selected_image='{"state":"unavailable"}'
-if image_identity=$(safe_managed_image); then
-  selected_image=$(printf '{"state":"present","identity_kind":"host-file-stat-v1","identity":"%s"}' "$image_identity")
-fi
-
 persisted_instance='{"state":"unavailable"}'
-if persisted_output=$(persisted_observation); then
-  mapfile -t persisted_values <<<"$persisted_output"
-  if ((${#persisted_values[@]} == 2)); then
-    persisted_instance=$(printf '{"state":"present","label":"%s","identity_kind":"host-file-stat-v1","identity":"%s"}' \
-      "${persisted_values[0]}" "${persisted_values[1]}")
+if image_output=$(managed_image_observation); then
+  mapfile -t image_values <<<"$image_output"
+  if ((${#image_values[@]} == 2)); then
+    selected_image=$(printf '{"state":"present","identity_kind":"host-file-stat-v1","identity":"%s"}' "${image_values[1]}")
+    if persisted_output=$(persisted_observation "${image_values[0]}" "${image_values[1]}"); then
+      mapfile -t persisted_values <<<"$persisted_output"
+      if ((${#persisted_values[@]} == 2)); then
+        persisted_instance=$(printf '{"state":"present","label":"%s","identity_kind":"host-file-stat-v1","identity":"%s"}' \
+          "${persisted_values[0]}" "${persisted_values[1]}")
+      fi
+    else
+      persisted_status=$?
+      [[ $persisted_status == 2 ]] && persisted_instance='{"state":"absent"}'
+    fi
+
+    # Preserve one selected-image snapshot across record collection.
+    if image_confirmation=$(managed_image_observation); then
+      mapfile -t confirmation_values <<<"$image_confirmation"
+      if ((${#confirmation_values[@]} != 2)) \
+        || [[ ${confirmation_values[0]} != "${image_values[0]}" || ${confirmation_values[1]} != "${image_values[1]}" ]]; then
+        selected_image='{"state":"unavailable"}'
+        persisted_instance='{"state":"unavailable"}'
+      fi
+    else
+      selected_image='{"state":"unavailable"}'
+      persisted_instance='{"state":"unavailable"}'
+    fi
   fi
-else
-  persisted_status=$?
-  [[ $persisted_status == 2 ]] && persisted_instance='{"state":"absent"}'
 fi
 
 payload=$(printf '{"schema":1,"container_runtime":%s,"selected_image":%s,"persisted_instance":%s}' \
