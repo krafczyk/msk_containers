@@ -10,6 +10,7 @@ force=0
 dry_run=0
 rollback=0
 source_image=
+source_revision=
 stage=
 link_stage=
 
@@ -25,13 +26,16 @@ Install and activate a transported Neovim SIF image. Managed image names use:
 
 Raw build images named nvim_container_{x86,aarch64,ppc64le}.sif are assigned a
 managed name automatically. VERSION comes from the image, GITREV from the HEAD
-of the checkout containing the image, and DIGEST from the image's SHA-256.
+of the checkout containing the image, and DIGEST from the image's SHA-256. For
+a raw image transported outside its checkout, --source-revision supplies GITREV.
 
 Options:
   --install-dir PATH  Container directory (default: ~/containers)
   --keep NUMBER       Installed image slots to retain (default: 2)
   --no-activate       Install without changing neovim.sif
   --force             Replace a corrupt destination with the source image
+  --source-revision SHA
+                      Full source commit SHA for a detached raw build image
   --dry-run           Validate and report without making changes
   --rollback          Swap neovim.sif and neovim.previous.sif
   -h, --help          Show this help
@@ -244,6 +248,11 @@ while (($#)); do
       force=1
       shift
       ;;
+    --source-revision)
+      (($# >= 2)) || die "--source-revision requires a full commit SHA"
+      source_revision=$2
+      shift 2
+      ;;
     --dry-run)
       dry_run=1
       shift
@@ -272,10 +281,15 @@ while (($#)); do
 done
 
 [[ $keep =~ ^[1-9][0-9]*$ ]] || die "--keep must be a positive integer"
+if [[ -n $source_revision ]]; then
+  source_revision=${source_revision,,}
+  [[ $source_revision =~ ^[0-9a-f]{40}$ ]] || die "--source-revision must be a full 40-character commit SHA"
+fi
 if (( rollback )); then
   [[ -z $source_image ]] || die "--rollback does not accept an image"
   (( activate )) || die "--rollback cannot be combined with --no-activate"
   (( ! force )) || die "--rollback cannot be combined with --force"
+  [[ -z $source_revision ]] || die "--source-revision cannot be combined with --rollback"
 else
   [[ -n $source_image ]] || die "an image is required"
 fi
@@ -334,18 +348,29 @@ if [[ -f $checksum_file ]]; then
 fi
 
 if (( raw_image )); then
-  image_dir=${source_image%/*}
-  if ! revision=$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY \
-    -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_INDEX_FILE -u GIT_NAMESPACE \
-    git -C "$image_dir" rev-parse --verify 'HEAD^{commit}' 2>/dev/null); then
-    die "cannot determine repository revision for raw build image: $source_image"
+  if [[ -n $source_revision ]]; then
+    image_dir=${source_image%/*}
+    if env -u GIT_DIR -u GIT_WORK_TREE -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY \
+      -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_INDEX_FILE -u GIT_NAMESPACE \
+      git -C "$image_dir" rev-parse --verify 'HEAD^{commit}' >/dev/null 2>&1; then
+      die "--source-revision is only for raw images outside a Git checkout"
+    fi
+    revision=$source_revision
+  else
+    image_dir=${source_image%/*}
+    if ! revision=$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY \
+      -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_INDEX_FILE -u GIT_NAMESPACE \
+      git -C "$image_dir" rev-parse --verify 'HEAD^{commit}' 2>/dev/null); then
+      die "cannot determine repository revision for raw build image: $source_image; use --source-revision with its full commit SHA"
+    fi
+    revision=${revision,,}
+    [[ $revision =~ ^[0-9a-f]{7,40}$ ]] || die "invalid repository revision for raw build image: $revision"
   fi
-  revision=${revision,,}
-  [[ $revision =~ ^[0-9a-f]{7,40}$ ]] || die "invalid repository revision for raw build image: $revision"
   expected_version=$(image_version "$source_image")
   [[ $expected_version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "image reports unsupported Neovim version: NVIM v${expected_version}"
   artifact_name="neovim_${expected_version}_g${revision}_${source_digest}_${image_arch}.sif"
 else
+  [[ -z $source_revision ]] || die "--source-revision applies only to raw build images outside a Git checkout"
   verify_image "$source_image" "$expected_version"
 fi
 destination="${install_dir}/$artifact_name"

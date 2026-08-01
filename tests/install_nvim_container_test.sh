@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-work=${1:?pass a task-specific directory beneath /tmp/opencode-mkchad}
+work=${1:?pass a task-specific directory beneath /tmp/mkchad-v1}
 installer=${2:?pass the installer path}
-[[ $work == /tmp/opencode-mkchad/* ]] || { printf '%s\n' 'test directory must be beneath /tmp/opencode-mkchad' >&2; exit 2; }
+[[ $work == /tmp/mkchad-v1/* ]] || { printf '%s\n' 'test directory must be beneath /tmp/mkchad-v1' >&2; exit 2; }
 [[ ! -e $work ]] || { printf '%s\n' 'test directory already exists' >&2; exit 2; }
 
 home="$work/home"
@@ -76,6 +76,35 @@ set -e
   exit 1
 }
 
+set +e
+checkout_revision_output=$(HOME="$home" PATH="$fake:$PATH" NVIM_CONTAINER_DIR="$work/checkout-revision-install" \
+  "$installed_installer" --dry-run --source-revision "$revision" "$raw" 2>&1)
+checkout_revision_status=$?
+set -e
+[[ $checkout_revision_status -ne 0 && $checkout_revision_output == *'only for raw images outside a Git checkout'* ]] || {
+  printf '%s\n' 'raw checkout image accepted a detached source revision' >&2
+  exit 1
+}
+
+detached_output=$(HOME="$home" PATH="$fake:$PATH" NVIM_CONTAINER_DIR="$work/detached-install" \
+  "$installed_installer" --dry-run --source-revision "$revision" "$detached")
+[[ $detached_output == *"Would install: $work/detached-install/neovim_0.12.4_g${revision}_${digest}_x86_64.sif"* ]] || {
+  printf '%s\n' 'detached raw image did not use the supplied source revision' >&2
+  exit 1
+}
+
+for invalid_revision in 1234567 "${revision}0" not-a-revision; do
+  set +e
+  invalid_output=$(HOME="$home" PATH="$fake:$PATH" NVIM_CONTAINER_DIR="$work/invalid-install" \
+    "$installed_installer" --dry-run --source-revision "$invalid_revision" "$detached" 2>&1)
+  invalid_status=$?
+  set -e
+  [[ $invalid_status -ne 0 && $invalid_output == *'--source-revision must be a full 40-character commit SHA'* ]] || {
+    printf '%s\n' 'invalid source revision was accepted' >&2
+    exit 1
+  }
+done
+
 managed_dir="$work/managed-source"
 managed_install="$work/managed-install"
 mkdir -p "$managed_dir"
@@ -92,5 +121,15 @@ HOME="$home" PATH="$fake:$PATH" NVIM_CONTAINER_DIR="$managed_install" \
   "$installed_installer" --no-activate "$managed" >/dev/null
 cmp "$managed" "$managed_install/${managed##*/}"
 [[ ! -e "$managed_install/neovim.sif" ]] || { printf '%s\n' 'managed no-activate install changed the active link' >&2; exit 1; }
+
+set +e
+managed_revision_output=$(HOME="$home" PATH="$fake:$PATH" NVIM_CONTAINER_DIR="$work/managed-revision-install" \
+  "$installed_installer" --dry-run --source-revision "$revision" "$managed" 2>&1)
+managed_revision_status=$?
+set -e
+[[ $managed_revision_status -ne 0 && $managed_revision_output == *'--source-revision applies only to raw build images outside a Git checkout'* ]] || {
+  printf '%s\n' 'managed image accepted a detached source revision' >&2
+  exit 1
+}
 
 printf '%s\n' 'install_nvim_container tests passed'
