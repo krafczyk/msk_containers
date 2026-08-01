@@ -85,6 +85,7 @@ Fedora package names, but DNF may satisfy an executable capability such as
 | `sqlite` | x86, ARM | Supplies the SQLite CLI for database inspection, query-plan analysis, and index investigation. |
 | `openssh-clients` | x86, ARM | Supplies `ssh` for browser and server verification that reaches a remote service through an explicit SSH tunnel. |
 | `xdg-utils` | x86, ARM | Supplies `xdg-open`, the default Linux URL-handler interface used by Neovim's `vim.ui.open()` path. |
+| `age` | x86, ARM | Supplies `age` and `age-keygen` for whole-file encrypted configuration capture, materialization, and host/recovery recipient provisioning. |
 | `ffmpeg-free` | All | Supplies the `ffmpeg` CLI used by Compound Engineering media analysis and artifact extraction. The Fedora build intentionally provides the distribution's codec-limited free variant. |
 
 The x86 and ARM images intentionally provide the same shell and diagnostic tool

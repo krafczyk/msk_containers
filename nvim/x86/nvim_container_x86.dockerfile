@@ -26,7 +26,9 @@ RUN dnf update -y && \
     libvterm libvterm-devel \
     msgpack msgpack-devel \
     clang clangd redhat-rpm-config libffi-devel \
-    openssl-devel memray && \
+    openssl-devel memray age && \
+    age --version && \
+    age-keygen --version && \
     dnf clean all
 
 # Generate the locales

@@ -313,6 +313,9 @@ for dockerfile in "$x86" "$arm"; do
   assert_active "$dockerfile" 'ARG LUACHECK_VERSION=1.2.0-1'
   assert_active "$dockerfile" 'selenium==4.46.0'
   assert_active "$dockerfile" 'py-spy'
+  assert_active "$dockerfile" 'openssl-devel memray age'
+  assert_active "$dockerfile" 'age --version'
+  assert_active "$dockerfile" 'age-keygen --version'
   assert_active "$dockerfile" 'ENV JDTLS_MILESTONE=1.56.0'
   assert_active "$dockerfile" 'test -x /nvim/jdtls/bin/jdtls'
   assert_not_contains "$dockerfile" '--strip-components=1'
@@ -363,6 +366,7 @@ assert_not_contains_case_insensitive "$repo/nvim/ppc64le/nvim_container_ppc64le.
 
 assert_contains "$adr" '| `ffmpeg-free` | All |'
 assert_contains "$adr" '| `ShellCheck` | All |'
+assert_contains "$adr" '| `age` | x86, ARM |'
 assert_contains "$adr" '| `jsonschema` | All | `>=4.23,<5` |'
 assert_contains "$adr" '| ast-grep | All | Cargo crate pinned to `0.44.1` with `--locked` |'
 assert_contains "$adr" '| `agent-browser` | x86, ARM | Pinned to `0.32.2` |'
