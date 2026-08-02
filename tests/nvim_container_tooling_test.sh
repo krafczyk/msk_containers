@@ -289,8 +289,8 @@ done
 x86="$repo/nvim/x86/nvim_container_x86.dockerfile"
 arm="$repo/nvim/aarch64/nvim_container_aarch64.dockerfile"
 manifest="$repo/nvim/component-manifest.json"
-x86_opencode_sha256=b4a3b77ebe3b6a40b98697bd2dba70437f0b5922fb8608be4d3c4c60cc1f4262
-arm_opencode_sha256=23f09f5489bbe46d2d611c40652271aa880d38f9e9ec1ff11205a1824738e736
+x86_opencode_sha256=4cdd0b8c77106c4efdca5278f86ffe5e9af8602aedcfca413600bb3abe778b1a
+arm_opencode_sha256=211562aa07f70baf178fa2e7726839178a256eef26db1b6651d3ba836b021433
 x86_definition="$repo/nvim/x86/nvim_container_x86.def"
 arm_definition="$repo/nvim/aarch64/nvim_container_aarch64.def"
 x86_docker_build="$repo/nvim/x86/nvim_container_x86_build_docker.sh"
@@ -311,7 +311,7 @@ manifest_path, *dockerfile_paths = sys.argv[1:]
 manifest = json.load(open(manifest_path, encoding="utf-8"))
 assert manifest["schema"] == 1
 assert manifest["component_id"] == "nvim-image"
-assert manifest["build_id"] == "nvim-0.12.4-node-24.18.0-opencode-1.18.9-mkchad.2"
+assert manifest["build_id"] == "nvim-0.12.4-node-24.18.0-opencode-1.18.9-mkchad.3"
 ships = manifest["relationships"]
 assert 1 <= len(ships) <= 8
 assert all(item["type"] == "ships" and item["contract"]["suffix_policy"] == "literal" for item in ships)
@@ -320,7 +320,7 @@ versions = {item["target_component"]: item["contract"]["version"] for item in sh
 assert versions == {
     "prereq-neovim": "0.12.4",
     "prereq-node": "24.18.0",
-    "opencode": "1.18.9-mkchad.2",
+    "opencode": "1.18.9-mkchad.3",
 }
 for path in dockerfile_paths:
     text = open(path, encoding="utf-8").read()
@@ -361,20 +361,20 @@ assert_contains_once "$arm" "$arm_luals_build" 'aarch64 LuaLS build'
 assert_active "$x86" 'node-v${NODE_VER}-linux-x64.tar.gz'
 assert_active "$x86" 'ENV PATH="/nvim/node-v${NODE_VER}-linux-x64/bin:$PATH"'
 assert_not_contains "$x86" 'node-v${NODE_VER}-linux-arm64'
-assert_active "$x86" 'ARG OPENCODE_ASSET=opencode-ai-1.18.9-mkchad.2-linux-x64.tgz'
+assert_active "$x86" 'ARG OPENCODE_ASSET=opencode-ai-1.18.9-mkchad.3-linux-x64.tgz'
 assert_active "$x86" "ARG OPENCODE_SHA256=$x86_opencode_sha256"
-assert_contains_once "$x86" 'ARG OPENCODE_VERSION=1.18.9-mkchad.2' 'OpenCode version pin'
-assert_contains_once "$x86" 'ARG OPENCODE_RELEASE_BASE=https://github.com/krafczyk/opencode/releases/download/v1.18.9-mkchad.2' 'OpenCode release base pin'
-assert_contains_once "$x86" 'ARG OPENCODE_ASSET=opencode-ai-1.18.9-mkchad.2-linux-x64.tgz' 'OpenCode x64 asset pin'
+assert_contains_once "$x86" 'ARG OPENCODE_VERSION=1.18.9-mkchad.3' 'OpenCode version pin'
+assert_contains_once "$x86" 'ARG OPENCODE_RELEASE_BASE=https://github.com/krafczyk/opencode/releases/download/v1.18.9-mkchad.3' 'OpenCode release base pin'
+assert_contains_once "$x86" 'ARG OPENCODE_ASSET=opencode-ai-1.18.9-mkchad.3-linux-x64.tgz' 'OpenCode x64 asset pin'
 assert_contains_once "$x86" "ARG OPENCODE_SHA256=$x86_opencode_sha256" 'OpenCode x64 checksum pin'
 assert_active "$arm" 'node-v${NODE_VER}-linux-arm64.tar.gz'
 assert_active "$arm" 'ENV PATH="/nvim/node-v${NODE_VER}-linux-arm64/bin:$PATH"'
 assert_not_contains "$arm" 'node-v${NODE_VER}-linux-x64'
-assert_active "$arm" 'ARG OPENCODE_ASSET=opencode-ai-1.18.9-mkchad.2-linux-arm64.tgz'
+assert_active "$arm" 'ARG OPENCODE_ASSET=opencode-ai-1.18.9-mkchad.3-linux-arm64.tgz'
 assert_active "$arm" "ARG OPENCODE_SHA256=$arm_opencode_sha256"
-assert_contains_once "$arm" 'ARG OPENCODE_VERSION=1.18.9-mkchad.2' 'OpenCode version pin'
-assert_contains_once "$arm" 'ARG OPENCODE_RELEASE_BASE=https://github.com/krafczyk/opencode/releases/download/v1.18.9-mkchad.2' 'OpenCode release base pin'
-assert_contains_once "$arm" 'ARG OPENCODE_ASSET=opencode-ai-1.18.9-mkchad.2-linux-arm64.tgz' 'OpenCode ARM64 asset pin'
+assert_contains_once "$arm" 'ARG OPENCODE_VERSION=1.18.9-mkchad.3' 'OpenCode version pin'
+assert_contains_once "$arm" 'ARG OPENCODE_RELEASE_BASE=https://github.com/krafczyk/opencode/releases/download/v1.18.9-mkchad.3' 'OpenCode release base pin'
+assert_contains_once "$arm" 'ARG OPENCODE_ASSET=opencode-ai-1.18.9-mkchad.3-linux-arm64.tgz' 'OpenCode ARM64 asset pin'
 assert_contains_once "$arm" "ARG OPENCODE_SHA256=$arm_opencode_sha256" 'OpenCode ARM64 checksum pin'
 assert_active "$x86_definition" 'From: nvim_container_x86.tar'
 assert_not_contains "$x86_definition" 'nvim_container_aarch64'
@@ -436,8 +436,8 @@ for dockerfile in "$x86" "$arm"; do
   assert_active "$dockerfile" '-DUSE_BUNDLED_LUAJIT=OFF'
   assert_active "$dockerfile" 'git clone --depth 1 --branch 3.17.1 https://github.com/LuaLS/lua-language-server'
   assert_active "$dockerfile" 'npm install -g neovim'
-  assert_active "$dockerfile" 'ARG OPENCODE_VERSION=1.18.9-mkchad.2'
-  assert_active "$dockerfile" 'ARG OPENCODE_RELEASE_BASE=https://github.com/krafczyk/opencode/releases/download/v1.18.9-mkchad.2'
+  assert_active "$dockerfile" 'ARG OPENCODE_VERSION=1.18.9-mkchad.3'
+  assert_active "$dockerfile" 'ARG OPENCODE_RELEASE_BASE=https://github.com/krafczyk/opencode/releases/download/v1.18.9-mkchad.3'
   assert_active "$dockerfile" "curl --fail --show-error --location --retry 3 --retry-all-errors --connect-timeout 20 --max-time 1800 --retry-max-time 1800 --proto '=https' --tlsv1.2 --output \"\${opencode_tarball}\""
   assert_active "$dockerfile" '"${OPENCODE_RELEASE_BASE}/${OPENCODE_ASSET}"'
   assert_active "$dockerfile" 'echo "${OPENCODE_SHA256}  ${opencode_tarball}" | sha256sum --check --strict -'
@@ -485,9 +485,9 @@ assert_contains "$adr" '| x86_64 | `24.18.0` | `linux-x64` |'
 assert_contains "$adr" '| aarch64 | `24.18.0` | `linux-arm64` |'
 assert_contains "$adr" '`linux-x64-node24`'
 assert_contains "$adr" 'OpenCode does not publish a Linux PPC64LE binary'
-assert_contains "$adr" '`1.18.9-mkchad.2`'
-assert_contains "$adr" '`b4a3b77ebe3b6a40b98697bd2dba70437f0b5922fb8608be4d3c4c60cc1f4262`'
-assert_contains "$adr" '`23f09f5489bbe46d2d611c40652271aa880d38f9e9ec1ff11205a1824738e736`'
+assert_contains "$adr" '`1.18.9-mkchad.3`'
+assert_contains "$adr" '`4cdd0b8c77106c4efdca5278f86ffe5e9af8602aedcfca413600bb3abe778b1a`'
+assert_contains "$adr" '`211562aa07f70baf178fa2e7726839178a256eef26db1b6651d3ba836b021433`'
 assert_contains "$adr" 'Keep the x86_64 and aarch64 images at functional parity'
 
 printf '%s\n' 'nvim container tooling tests passed'

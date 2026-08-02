@@ -148,10 +148,10 @@ RUN npm install --prefix /opt/msk/browser-tools --save-exact \
 
 # Baseline tools make a fresh MkChad launch work before a user-managed runtime
 # update has been installed.  The latter takes precedence when mounted.
-ARG OPENCODE_VERSION=1.18.9-mkchad.2
-ARG OPENCODE_RELEASE_BASE=https://github.com/krafczyk/opencode/releases/download/v1.18.9-mkchad.2
-ARG OPENCODE_ASSET=opencode-ai-1.18.9-mkchad.2-linux-x64.tgz
-ARG OPENCODE_SHA256=b4a3b77ebe3b6a40b98697bd2dba70437f0b5922fb8608be4d3c4c60cc1f4262
+ARG OPENCODE_VERSION=1.18.9-mkchad.3
+ARG OPENCODE_RELEASE_BASE=https://github.com/krafczyk/opencode/releases/download/v1.18.9-mkchad.3
+ARG OPENCODE_ASSET=opencode-ai-1.18.9-mkchad.3-linux-x64.tgz
+ARG OPENCODE_SHA256=4cdd0b8c77106c4efdca5278f86ffe5e9af8602aedcfca413600bb3abe778b1a
 
 # Keep the reviewed package in Node's embedded immutable prefix. The mounted
 # user prefix remains earlier on PATH at runtime and can intentionally override it.

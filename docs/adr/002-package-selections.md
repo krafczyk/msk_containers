@@ -165,7 +165,7 @@ PPC64LE release.
 ## Verified OpenCode Release
 
 The x86 and ARM images install the public MkChad OpenCode release
-`1.18.9-mkchad.2`, built from commit `a8a797ab717289fe30308b1e3bcc8dfa865beb4a`.
+`1.18.9-mkchad.3`, built from commit `9ff58294d62af73a9b17deb6bbf508072fb89671`.
 The Dockerfiles download only the architecture-specific GitHub release tarball
 over HTTPS with failure-preserving curl options, verify its pinned SHA-256 before
 global npm installation, and require `opencode --version` to equal the release
@@ -173,8 +173,8 @@ version.
 
 | Architecture | Release asset | SHA-256 |
 | --- | --- | --- |
-| x86_64 | `opencode-ai-1.18.9-mkchad.2-linux-x64.tgz` | `b4a3b77ebe3b6a40b98697bd2dba70437f0b5922fb8608be4d3c4c60cc1f4262` |
-| aarch64 | `opencode-ai-1.18.9-mkchad.2-linux-arm64.tgz` | `23f09f5489bbe46d2d611c40652271aa880d38f9e9ec1ff11205a1824738e736` |
+| x86_64 | `opencode-ai-1.18.9-mkchad.3-linux-x64.tgz` | `4cdd0b8c77106c4efdca5278f86ffe5e9af8602aedcfca413600bb3abe778b1a` |
+| aarch64 | `opencode-ai-1.18.9-mkchad.3-linux-arm64.tgz` | `211562aa07f70baf178fa2e7726839178a256eef26db1b6651d3ba836b021433` |
 
 The verified package is installed in the embedded Node.js global prefix beneath
 `/nvim`, which is an immutable image baseline. At runtime,
