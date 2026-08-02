@@ -235,7 +235,10 @@ assert versions == {
 }
 for path in dockerfile_paths:
     text = open(path, encoding="utf-8").read()
-    assert "COPY component-manifest.json /usr/share/mkchad/component-manifest.json" in text
+    manifest_copy = "COPY component-manifest.json /usr/share/mkchad/component-manifest.json"
+    assert text.count(manifest_copy) == 1
+    active_lines = [line.strip() for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+    assert active_lines[-1] == manifest_copy
     assert re.search(r"ARG OPENCODE_VERSION=" + re.escape(versions["opencode"]) + r"(?:\n|\r\n)", text)
     assert re.search(r"ENV NODE_VER=" + re.escape(versions["prereq-node"]) + r"(?:\n|\r\n)", text)
     assert "--branch v" + versions["prereq-neovim"] in text
