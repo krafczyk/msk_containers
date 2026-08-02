@@ -117,6 +117,41 @@ set -e
   exit 1
 }
 
+managed_home="$work/managed-home"
+managed_bin="$work/managed-bin"
+mkdir -p "$managed_home/.local" "$managed_bin"
+cat >"$managed_bin/stat" <<'EOF'
+#!/usr/bin/env bash
+if [[ ${!#} == "$MKCHAD_TEST_MANAGED_HOME" ]]; then
+  case ${2:-} in
+    %u) printf '%s\n' 0; exit 0 ;;
+    %a) printf '%s\n' "${MKCHAD_TEST_MANAGED_MODE:-770}"; exit 0 ;;
+  esac
+fi
+exec "$MKCHAD_TEST_REAL_STAT" "$@"
+EOF
+chmod 755 "$managed_bin/stat"
+real_stat=$(command -v stat)
+set +e
+managed_output=$(PATH="$managed_bin:$PATH" MKCHAD_TEST_MANAGED_HOME="$managed_home" MKCHAD_TEST_REAL_STAT="$real_stat" HOME="$managed_home" bash "$installer" --check 2>&1)
+managed_status=$?
+set -e
+[[ $managed_status -ne 0 && $managed_output == *'not current-user-owned'* ]] || {
+  printf '%s\n' 'managed root was accepted without explicit trust' >&2
+  exit 1
+}
+PATH="$managed_bin:$PATH" MKCHAD_TEST_MANAGED_HOME="$managed_home" MKCHAD_TEST_REAL_STAT="$real_stat" \
+  MKCHAD_TRUST_GROUP_WRITABLE_ROOTS=1 HOME="$managed_home" bash "$installer" --check >/dev/null
+set +e
+managed_world_output=$(PATH="$managed_bin:$PATH" MKCHAD_TEST_MANAGED_HOME="$managed_home" MKCHAD_TEST_MANAGED_MODE=777 \
+  MKCHAD_TEST_REAL_STAT="$real_stat" MKCHAD_TRUST_GROUP_WRITABLE_ROOTS=1 HOME="$managed_home" bash "$installer" --check 2>&1)
+managed_world_status=$?
+set -e
+[[ $managed_world_status -ne 0 && $managed_world_output == *'group- or world-writable'* ]] || {
+  printf '%s\n' 'managed world-writable root was not rejected' >&2
+  exit 1
+}
+
 foreign="$target/nvim_clear_data"
 if chown 1:1 "$foreign" 2>/dev/null; then
   set +e

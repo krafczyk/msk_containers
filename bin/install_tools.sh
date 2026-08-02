@@ -34,19 +34,24 @@ cleanup() {
 trap cleanup EXIT
 
 check_safe_directory() {
-  local path=$1 label=$2 uid mode
+  local path=$1 label=$2 allow_trusted_root=${3:-0} uid mode
   [[ ! -L $path ]] || die "unsafe parent symlink: $label"
   [[ -d $path ]] || die "unsafe parent is not a directory: $label"
   uid=$(stat -Lc '%u' -- "$path") || die "cannot inspect parent: $label"
-  [[ $uid == "$EUID" ]] || die "unsafe parent is not current-user-owned: $label"
   mode=$(stat -Lc '%a' -- "$path") || die "cannot inspect parent mode: $label"
+  if (( allow_trusted_root )) && [[ ${MKCHAD_TRUST_GROUP_WRITABLE_ROOTS:-0} == 1 ]]; then
+    [[ $uid == 0 || $uid == "$EUID" ]] || die "unsafe parent is not root- or current-user-owned: $label"
+    (( (8#$mode & 002) == 0 )) || die "unsafe parent is group- or world-writable: $label"
+    return
+  fi
+  [[ $uid == "$EUID" ]] || die "unsafe parent is not current-user-owned: $label"
   (( (8#$mode & 022) == 0 )) || die "unsafe parent is group- or world-writable: $label"
 }
 
 validate_target_parents() {
   local current=$HOME part
   [[ $HOME == /* ]] || die "HOME must be an absolute path"
-  check_safe_directory "$current" "$current"
+  check_safe_directory "$current" "$current" 1
   for part in .local bin; do
     current="$current/$part"
     [[ ! -e $current && ! -L $current ]] && continue
@@ -185,6 +190,11 @@ while (($#)); do
     *) die "unknown option: $1" ;;
   esac
 done
+
+case ${MKCHAD_TRUST_GROUP_WRITABLE_ROOTS:-0} in
+  0 | 1) ;;
+  *) die "MKCHAD_TRUST_GROUP_WRITABLE_ROOTS must be 0 or 1" ;;
+esac
 
 preflight
 (( check_only )) && exit 0
