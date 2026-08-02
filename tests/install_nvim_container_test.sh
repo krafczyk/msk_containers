@@ -18,6 +18,7 @@ mkdir -p "$home" "$fake" "$raw_dir" "${installed_installer%/*}"
 cat > "$fake/apptainer" <<'EOF'
 #!/usr/bin/env bash
 [[ $1 == exec && $3 == nvim && $4 == --version ]] || exit 64
+printf '%s\n' 'INFO:    gocryptfs not found, will not be able to use gocryptfs' >&2
 printf '%s\n' 'NVIM v0.12.4'
 EOF
 cat > "$fake/uname" <<'EOF'

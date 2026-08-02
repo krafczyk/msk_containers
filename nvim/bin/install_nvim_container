@@ -91,7 +91,7 @@ image_version() {
   local runtime output first_line
 
   runtime=$(image_runtime)
-  if ! output=$("$runtime" exec "$image" nvim --version 2>&1); then
+  if ! output=$("$runtime" exec "$image" nvim --version); then
     printf '%s\n' "$output" >&2
     die "container validation failed: $image"
   fi
