@@ -33,6 +33,15 @@ must not be reused for another apply.
 for its container-tool output set. `install_nvim.sh` remains the public entry
 point when both launchers and tools are required.
 
+The release deployer may set `MKCHAD_TRUST_GROUP_WRITABLE_ROOTS=1` after an
+operator explicitly trusts every group-class or ACL writer on an ACL-managed
+home. Under that setting, only `HOME` may be root- or current-user-owned and
+group-writable. World-write access, foreign ownership, `.local` and `bin`
+permissions, outputs, locks, and recovery directories retain their strict
+checks. The default value is `0`; any value other than `0` or `1` is rejected.
+This environment variable is an internal deployment handoff, not a substitute
+for the public release-bootstrap trust option.
+
 ## Transported Images
 
 `nvim/bin/install_nvim_container` continues to derive the revision for a raw

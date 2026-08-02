@@ -20,6 +20,7 @@ chmod 700 "$recovery"
 cp -a "$repo/bin" "$repo/container_tools" "$repo/nvim" "$fixture/"
 
 installer="$fixture/bin/install_nvim.sh"
+tools_installer="$fixture/bin/install_tools.sh"
 target="$home/.local/bin"
 
 # A check must validate the complete output set without creating host paths.
@@ -124,7 +125,7 @@ cat >"$managed_bin/stat" <<'EOF'
 #!/usr/bin/env bash
 if [[ ${!#} == "$MKCHAD_TEST_MANAGED_HOME" ]]; then
   case ${2:-} in
-    %u) printf '%s\n' 0; exit 0 ;;
+    %u) printf '%s\n' "${MKCHAD_TEST_MANAGED_UID:-0}"; exit 0 ;;
     %a) printf '%s\n' "${MKCHAD_TEST_MANAGED_MODE:-770}"; exit 0 ;;
   esac
 fi
@@ -142,6 +143,8 @@ set -e
 }
 PATH="$managed_bin:$PATH" MKCHAD_TEST_MANAGED_HOME="$managed_home" MKCHAD_TEST_REAL_STAT="$real_stat" \
   MKCHAD_TRUST_GROUP_WRITABLE_ROOTS=1 HOME="$managed_home" bash "$installer" --check >/dev/null
+PATH="$managed_bin:$PATH" MKCHAD_TEST_MANAGED_HOME="$managed_home" MKCHAD_TEST_REAL_STAT="$real_stat" \
+  MKCHAD_TRUST_GROUP_WRITABLE_ROOTS=1 HOME="$managed_home" bash "$tools_installer" --check >/dev/null
 set +e
 managed_world_output=$(PATH="$managed_bin:$PATH" MKCHAD_TEST_MANAGED_HOME="$managed_home" MKCHAD_TEST_MANAGED_MODE=777 \
   MKCHAD_TEST_REAL_STAT="$real_stat" MKCHAD_TRUST_GROUP_WRITABLE_ROOTS=1 HOME="$managed_home" bash "$installer" --check 2>&1)
@@ -149,6 +152,26 @@ managed_world_status=$?
 set -e
 [[ $managed_world_status -ne 0 && $managed_world_output == *'group- or world-writable'* ]] || {
   printf '%s\n' 'managed world-writable root was not rejected' >&2
+  exit 1
+}
+set +e
+managed_foreign_output=$(PATH="$managed_bin:$PATH" MKCHAD_TEST_MANAGED_HOME="$managed_home" MKCHAD_TEST_MANAGED_UID=1234 \
+  MKCHAD_TEST_REAL_STAT="$real_stat" MKCHAD_TRUST_GROUP_WRITABLE_ROOTS=1 HOME="$managed_home" bash "$installer" --check 2>&1)
+managed_foreign_status=$?
+set -e
+[[ $managed_foreign_status -ne 0 && $managed_foreign_output == *'not root- or current-user-owned'* ]] || {
+  printf '%s\n' 'managed foreign-owned root was not rejected' >&2
+  exit 1
+}
+chmod 777 "$managed_home/.local"
+set +e
+managed_descendant_output=$(PATH="$managed_bin:$PATH" MKCHAD_TEST_MANAGED_HOME="$managed_home" MKCHAD_TEST_REAL_STAT="$real_stat" \
+  MKCHAD_TRUST_GROUP_WRITABLE_ROOTS=1 HOME="$managed_home" bash "$tools_installer" --check 2>&1)
+managed_descendant_status=$?
+set -e
+chmod 755 "$managed_home/.local"
+[[ $managed_descendant_status -ne 0 && $managed_descendant_output == *'group- or world-writable'* ]] || {
+  printf '%s\n' 'unsafe managed-root descendant was not rejected' >&2
   exit 1
 }
 
