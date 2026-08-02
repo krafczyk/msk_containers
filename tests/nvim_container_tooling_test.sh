@@ -5,6 +5,8 @@ set -euo pipefail
 
 repo=$(git rev-parse --show-toplevel)
 adr="$repo/docs/adr/002-package-selections.md"
+test_tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/nvim-container-tooling-test.XXXXXX")
+trap 'rm -rf -- "$test_tmpdir"' EXIT
 
 assert_contains() {
   local file=$1
@@ -184,6 +186,85 @@ normalized_definition() {
   printf '%s' "$content"
 }
 
+normalized_architecture_script() {
+  local file=$1
+  local architecture=$2
+  local content
+
+  content=$(<"$file")
+  case $architecture in
+    x86)
+      content=${content//linux\/x86_64/linux\/CONTAINER_ARCH}
+      content=${content//\/x86\//\/CONTAINER_ARCH\/}
+      content=${content//nvim_container_x86/nvim_container_ARCH}
+      ;;
+    aarch64)
+      content=${content//linux\/arm64/linux\/CONTAINER_ARCH}
+      content=${content//\/aarch64\//\/CONTAINER_ARCH\/}
+      content=${content//nvim_container_aarch64/nvim_container_ARCH}
+      ;;
+    *)
+      printf 'unsupported container architecture: %s\n' "$architecture" >&2
+      exit 1
+      ;;
+  esac
+  printf '%s' "$content"
+}
+
+assert_architecture_script_parity() {
+  local description=$1
+  local x86_script=$2
+  local arm_script=$3
+  local x86_normalized
+  local arm_normalized
+
+  x86_normalized=$(normalized_architecture_script "$x86_script" x86)
+  arm_normalized=$(normalized_architecture_script "$arm_script" aarch64)
+  if [[ $x86_normalized != "$arm_normalized" ]]; then
+    printf 'x86 and aarch64 %s differ outside architecture identifiers\n' "$description" >&2
+    diff -u <(printf '%s\n' "$x86_normalized") <(printf '%s\n' "$arm_normalized") >&2 || true
+    exit 1
+  fi
+}
+
+assert_orchestration_invocations() {
+  local architecture=$1
+  local build_script=$2
+  local platform=$3
+  local image=$4
+  local dockerfile=$5
+  local export_tar=$6
+  local definition=$7
+  local sif=$8
+  local fake_bin="$test_tmpdir/$architecture/bin"
+  local command_log="$test_tmpdir/$architecture/commands"
+  local expected
+
+  mkdir -p "$fake_bin"
+  for command in docker singularity apptainer; do
+    printf '%s\n' \
+      '#!/usr/bin/env bash' \
+      'printf "%s" "${0##*/}" >> "$NVIM_CONTAINER_COMMAND_LOG"' \
+      'printf " <%s>" "$@" >> "$NVIM_CONTAINER_COMMAND_LOG"' \
+      'printf "\n" >> "$NVIM_CONTAINER_COMMAND_LOG"' > "$fake_bin/$command"
+    chmod +x "$fake_bin/$command"
+  done
+
+  (
+    cd "$repo/nvim/$architecture"
+    NVIM_CONTAINER_COMMAND_LOG=$command_log PATH="$fake_bin:$PATH" bash "$build_script"
+  )
+
+  expected=$(printf '%s\n' \
+    "docker <buildx> <build> <--platform> <$platform> <-f> <$dockerfile> <-t> <$image:latest> <--load> <$repo/nvim>" \
+    "docker <save> <$image:latest> <-o> <$export_tar>" \
+    "singularity <build> <--force> <--fakeroot> <$sif> <$definition>")
+  if ! diff -u <(printf '%s\n' "$expected") "$command_log"; then
+    printf 'unexpected %s orchestration command sequence\n' "$architecture" >&2
+    exit 1
+  fi
+}
+
 for arch in x86 aarch64 ppc64le; do
   dockerfile="$repo/nvim/$arch/nvim_container_${arch}.dockerfile"
   definition="$repo/nvim/$arch/nvim_container_${arch}.def"
@@ -212,6 +293,14 @@ x86_opencode_sha256=b4a3b77ebe3b6a40b98697bd2dba70437f0b5922fb8608be4d3c4c60cc1f
 arm_opencode_sha256=23f09f5489bbe46d2d611c40652271aa880d38f9e9ec1ff11205a1824738e736
 x86_definition="$repo/nvim/x86/nvim_container_x86.def"
 arm_definition="$repo/nvim/aarch64/nvim_container_aarch64.def"
+x86_docker_build="$repo/nvim/x86/nvim_container_x86_build_docker.sh"
+arm_docker_build="$repo/nvim/aarch64/nvim_container_aarch64_build_docker.sh"
+x86_docker_export="$repo/nvim/x86/nvim_container_x86_export_docker.sh"
+arm_docker_export="$repo/nvim/aarch64/nvim_container_aarch64_export_docker.sh"
+x86_build="$repo/nvim/x86/nvim_container_x86_build.sh"
+arm_build="$repo/nvim/aarch64/nvim_container_aarch64_build.sh"
+x86_singularity_build="$repo/nvim/x86/nvim_container_x86_build_singularity.sh"
+arm_singularity_build="$repo/nvim/aarch64/nvim_container_aarch64_build_singularity.sh"
 
 python3 - "$manifest" "$x86" "$arm" <<'PY'
 import json
@@ -243,8 +332,14 @@ for path in dockerfile_paths:
     assert re.search(r"ENV NODE_VER=" + re.escape(versions["prereq-node"]) + r"(?:\n|\r\n)", text)
     assert "--branch v" + versions["prereq-neovim"] in text
 PY
-assert_active "$repo/nvim/x86/nvim_container_x86_build_docker.sh" '-f "$nvim_dir/x86/nvim_container_x86.dockerfile"'
-assert_active "$repo/nvim/aarch64/nvim_container_aarch64_build_docker.sh" '-f "$nvim_dir/aarch64/nvim_container_aarch64.dockerfile"'
+assert_active "$x86_docker_build" '--platform linux/x86_64'
+assert_active "$x86_docker_build" '-f "$nvim_dir/x86/nvim_container_x86.dockerfile"'
+assert_active "$x86_docker_build" '-t nvim_container_x86:latest'
+assert_active "$x86_docker_build" '--load "$nvim_dir"'
+assert_active "$arm_docker_build" '--platform linux/arm64'
+assert_active "$arm_docker_build" '-f "$nvim_dir/aarch64/nvim_container_aarch64.dockerfile"'
+assert_active "$arm_docker_build" '-t nvim_container_aarch64:latest'
+assert_active "$arm_docker_build" '--load "$nvim_dir"'
 
 x86_luals_build=$(printf '%s\n' \
   "RUN git clone --depth 1 --branch 3.17.1 https://github.com/LuaLS/lua-language-server /nvim/lua-language-server && \\" \
@@ -303,6 +398,19 @@ if [[ $x86_definition_normalized != "$arm_definition_normalized" ]]; then
     <(printf '%s\n' "$arm_definition_normalized") >&2 || true
   exit 1
 fi
+
+assert_architecture_script_parity 'Docker build scripts' "$x86_docker_build" "$arm_docker_build"
+assert_architecture_script_parity 'Docker export scripts' "$x86_docker_export" "$arm_docker_export"
+assert_architecture_script_parity 'top-level build scripts' "$x86_build" "$arm_build"
+assert_architecture_script_parity 'Singularity/Apptainer build scripts' "$x86_singularity_build" "$arm_singularity_build"
+assert_orchestration_invocations \
+  x86 "$x86_build" linux/x86_64 nvim_container_x86 \
+  "$repo/nvim/x86/nvim_container_x86.dockerfile" nvim_container_x86.tar \
+  nvim_container_x86.def nvim_container_x86.sif
+assert_orchestration_invocations \
+  aarch64 "$arm_build" linux/arm64 nvim_container_aarch64 \
+  "$repo/nvim/aarch64/nvim_container_aarch64.dockerfile" nvim_container_aarch64.tar \
+  nvim_container_aarch64.def nvim_container_aarch64.sif
 
 assert_same_arguments 'dnf install -y ' 'direct DNF package'
 assert_same_arguments 'pip3 install --prefix /usr ' 'direct pip package'

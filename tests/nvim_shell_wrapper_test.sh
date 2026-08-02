@@ -29,24 +29,34 @@ EOF
 cat > "$fake/node" <<'EOF'
 #!/usr/bin/env bash
 [[ ${1:-} == -p ]] || exit 64
-printf '%s\n' 'linux-x64-node24'
+[[ ${2:-} == "process.platform + '-' + process.arch + '-node' + process.versions.node.split('.')[0]" ]] || exit 64
+printf '%s-%s-node%s\n' \
+  "${MKCHAD_TEST_NODE_PLATFORM:?}" \
+  "${MKCHAD_TEST_NODE_ARCH:?}" \
+  "${MKCHAD_TEST_NODE_VERSION%%.*}"
 EOF
 cat > "$bin/ct_shell.sh" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$@" > "$MKCHAD_TEST_RUNTIME_LOG"
 exit 23
 EOF
-mkdir -p "$npm_base/linux-x64-node24/bin"
 cat > "$fake/opencode" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' 'immutable-baseline'
 EOF
-cat > "$npm_base/linux-x64-node24/bin/opencode" <<'EOF'
+node_platforms=(linux linux)
+node_architectures=(x64 arm64)
+node_versions=(24.18.0 24.18.0)
+for index in "${!node_platforms[@]}"; do
+  node_global_key="${node_platforms[index]}-${node_architectures[index]}-node${node_versions[index]%%.*}"
+  mkdir -p "$npm_base/$node_global_key/bin"
+  cat > "$npm_base/$node_global_key/bin/opencode" <<EOF
 #!/usr/bin/env bash
-printf '%s\n' 'side-installed'
+printf '%s\\n' "side-installed:$node_global_key:\${NPM_CONFIG_PREFIX}:\${MSK_NPM_GLOBAL_ROOT}"
 EOF
-chmod 755 "$fake/apptainer" "$fake/node" "$fake/opencode" \
-  "$npm_base/linux-x64-node24/bin/opencode" "$bin/ct_shell.sh"
+  chmod 755 "$npm_base/$node_global_key/bin/opencode"
+done
+chmod 755 "$fake/apptainer" "$fake/node" "$fake/opencode" "$bin/ct_shell.sh"
 
 set +e
 HOME="$home" XDG_DATA_HOME="$home/data" \
@@ -67,11 +77,21 @@ mapfile -t argv < "$runtime_log"
   exit 1
 }
 
-selection=$(MSK_NPM_GLOBAL_BASE="$npm_base" PATH="$fake:$PATH" \
-  "$bin/mkchad-container-bootstrap" opencode --version)
-[[ $selection == side-installed ]] || {
-  printf '%s\n' 'container bootstrap did not prioritize the side-installed executable' >&2
-  exit 1
-}
+for index in "${!node_platforms[@]}"; do
+  node_platform=${node_platforms[index]}
+  node_architecture=${node_architectures[index]}
+  node_version=${node_versions[index]}
+  node_global_key="${node_platform}-${node_architecture}-node${node_version%%.*}"
+  selection=$(MSK_NPM_GLOBAL_BASE="$npm_base" \
+    MKCHAD_TEST_NODE_PLATFORM="$node_platform" \
+    MKCHAD_TEST_NODE_ARCH="$node_architecture" \
+    MKCHAD_TEST_NODE_VERSION="$node_version" PATH="$fake:$PATH" \
+    "$bin/mkchad-container-bootstrap" opencode --version)
+  expected_selection="side-installed:$node_global_key:$npm_base/$node_global_key:$npm_base/$node_global_key"
+  [[ $selection == "$expected_selection" ]] || {
+    printf 'container bootstrap did not select the writable %s npm prefix\n' "$node_global_key" >&2
+    exit 1
+  }
+done
 
 printf '%s\n' 'nvim_shell wrapper tests passed'
