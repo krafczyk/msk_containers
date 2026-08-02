@@ -40,7 +40,7 @@ group-writable. World-write access, foreign ownership, `.local` and `bin`
 permissions, outputs, locks, and recovery directories retain their strict
 checks. The default value is `0`; any value other than `0` or `1` is rejected.
 This environment variable is an internal deployment handoff, not a substitute
-for the public release-bootstrap trust option.
+for the public `--trust-group-writable-deployment-roots` option.
 
 ## Transported Images
 
