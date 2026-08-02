@@ -44,7 +44,18 @@ HOME="$home" bash "$installer" >/dev/null
 }
 
 printf '%s\n' '# updated launcher fixture' >> "$fixture/nvim/bin/nvim"
+printf '%s\n' '# updated tool fixture' >> "$fixture/container_tools/ct_exec.sh"
 cp -- "$target/nvim" "$work/nvim-before"
+cp -- "$target/ct_exec.sh" "$work/ct-exec-before"
+HOME="$home" bash "$installer" --check >/dev/null
+cmp "$work/nvim-before" "$target/nvim" || {
+  printf '%s\n' '--check rewrote a noncompliant launcher' >&2
+  exit 1
+}
+cmp "$work/ct-exec-before" "$target/ct_exec.sh" || {
+  printf '%s\n' '--check rewrote a noncompliant container tool' >&2
+  exit 1
+}
 rm "$target/mkchad-opencode-server"
 mkdir "$target/mkchad-opencode-server"
 set +e
@@ -64,6 +75,10 @@ rmdir "$target/mkchad-opencode-server"
 HOME="$home" bash "$installer" --recovery-dir "$recovery" >/dev/null
 cmp "$work/nvim-before" "$recovery/nvim" || {
   printf '%s\n' 'replacement did not retain prior launcher bytes' >&2
+  exit 1
+}
+cmp "$work/ct-exec-before" "$recovery/ct_exec.sh" || {
+  printf '%s\n' 'replacement did not retain prior container-tool bytes' >&2
   exit 1
 }
 

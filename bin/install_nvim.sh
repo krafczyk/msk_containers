@@ -132,7 +132,7 @@ preflight_launchers() {
       needs_recovery=1
     fi
   done
-  if (( needs_recovery )) || [[ -n $recovery_dir ]]; then
+  if (( ! check_only && needs_recovery )) || [[ -n $recovery_dir ]]; then
     validate_recovery_dir
   fi
 }
