@@ -118,6 +118,7 @@ files=(
   "$bin_dir/nvim"
   "$bin_dir/nvim_shell"
   "$bin_dir/nvim_clear_data"
+  "$bin_dir/nvim_clear_npm_global"
   "$bin_dir/mkchad"
   "$bin_dir/mkchad-container-bootstrap"
   "$bin_dir/mkchad-status-host-evidence"

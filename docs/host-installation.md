@@ -24,6 +24,24 @@ reused for another apply.
 interface. `install_nvim.sh` remains the public entrypoint when both launchers
 and tools are needed.
 
+## Writable npm Cleanup
+
+`nvim_clear_npm_global` removes the complete host-side writable npm root at
+`~/.local/share/msk_containers/npm-global`, including every architecture and
+Node-major prefix. Stop MkChad editors and the managed OpenCode service before
+running it. The next launch recreates the root, and command resolution falls
+back to the immutable packages in the active image until packages are installed
+there again.
+
+```bash
+nvim_clear_npm_global --dry-run
+nvim_clear_npm_global
+```
+
+The command accepts no path override. It refuses symbolic, foreign-owned, or
+group/world-writable managed paths and preserves sibling data under
+`~/.local/share/msk_containers`.
+
 ## Transported Images
 
 For a raw image outside its source checkout, the image installer requires its

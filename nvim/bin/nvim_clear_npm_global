@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+program=${0##*/}
+dry_run=0
+
+usage() {
+  cat <<EOF
+Usage: $program [--dry-run]
+
+Clear every ABI-specific writable npm prefix under:
+  \$HOME/.local/share/msk_containers/npm-global
+EOF
+}
+
+die() {
+  printf '%s: %s\n' "$program" "$*" >&2
+  exit 1
+}
+
+case $# in
+  0) ;;
+  1)
+    case $1 in
+      --dry-run) dry_run=1 ;;
+      -h | --help) usage; exit 0 ;;
+      *) die "unknown option: $1" ;;
+    esac
+    ;;
+  *) die 'too many arguments' ;;
+esac
+
+home=${HOME:-}
+[[ $home == /* && $home != / ]] || die 'HOME must be an absolute non-root path'
+resolved_home=$(realpath -e -- "$home") || die "HOME is unavailable: $home"
+[[ $resolved_home == "$home" ]] || die "HOME resolves through a symbolic link: $home"
+
+managed="$home/.local/share/msk_containers"
+npm_root="$managed/npm-global"
+paths=("$home/.local" "$home/.local/share" "$managed" "$npm_root")
+
+for path in "${paths[@]}"; do
+  [[ ! -L $path ]] || die "managed path is a symbolic link: $path"
+  if [[ ! -e $path ]]; then
+    printf 'Already clear: %s\n' "$npm_root"
+    exit 0
+  fi
+  [[ -d $path ]] || die "managed path is not a directory: $path"
+done
+
+for path in "${paths[@]}"; do
+  uid=$(stat -Lc '%u' -- "$path") || die "cannot inspect managed path owner: $path"
+  mode=$(stat -Lc '%a' -- "$path") || die "cannot inspect managed path mode: $path"
+  [[ $uid == "$EUID" ]] || die "managed path is not current-user-owned: $path"
+  (( (8#$mode & 022) == 0 )) || die "managed path is group- or world-writable: $path"
+done
+
+if (( dry_run )); then
+  printf 'Would clear: %s\n' "$npm_root"
+  exit 0
+fi
+
+rm -rf --one-file-system -- "$npm_root"
+[[ ! -e $npm_root && ! -L $npm_root ]] || die "npm root still exists after cleanup: $npm_root"
+printf 'Cleared: %s\n' "$npm_root"
