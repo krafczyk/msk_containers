@@ -139,10 +139,10 @@ backup_output() {
   recovery_stage=$(mktemp "$recovery_dir/.${name}.XXXXXX")
   cp -- "$output" "$recovery_stage"
   chmod 600 -- "$recovery_stage"
-  sync -f -- "$recovery_stage"
+  sync -- "$recovery_stage"
   mv -T -- "$recovery_stage" "$backup"
   recovery_stage=
-  sync -f -- "$recovery_dir"
+  sync -- "$recovery_dir"
 }
 
 install_file() {
@@ -156,13 +156,13 @@ install_file() {
   cp -- "$source" "$stage"
   chmod 755 -- "$stage"
   cmp -s -- "$source" "$stage" || die "staged file does not match source: $source"
-  sync -f -- "$stage"
+  sync -- "$stage"
   [[ $(stat -Lc '%d:%i' -- "$target_dir") == "$target_identity" ]] || die "target directory changed during installation: $target_dir"
   [[ $(output_identity "$output") == "$expected_output_identity" ]] || die "output changed during installation: $output"
   mv -fT -- "$stage" "$output"
   stage=
-  sync -f -- "$output"
-  sync -f -- "$target_dir"
+  sync -- "$output"
+  sync -- "$target_dir"
 }
 
 acquire_lock() {

@@ -23,6 +23,27 @@ installer="$fixture/bin/install_nvim.sh"
 tools_installer="$fixture/bin/install_tools.sh"
 target="$home/.local/bin"
 
+# Durability must be scoped to each installed path, not its entire filesystem.
+test_bin="$work/bin"
+real_sync=$(command -v sync)
+mkdir "$test_bin"
+cat >"$test_bin/sync" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+for argument in "$@"; do
+  case $argument in
+    -f | --file-system)
+      printf '%s\n' 'installer requested a filesystem-wide sync' >&2
+      exit 97
+      ;;
+  esac
+done
+exec "$MKCHAD_TEST_REAL_SYNC" "$@"
+EOF
+chmod 755 "$test_bin/sync"
+export MKCHAD_TEST_REAL_SYNC="$real_sync"
+export PATH="$test_bin:$PATH"
+
 # A check must validate the complete output set without creating host paths.
 HOME="$home" bash "$installer" --check >/dev/null
 [[ ! -e $home/.local ]] || {
