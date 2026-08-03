@@ -1,5 +1,5 @@
 # Use the pinned Fedora 43 multi-architecture base image
-FROM quay.io/fedora/fedora:43@sha256:b1abe956db4a8f8fcfe8a5d8d03f9ebf61ac76f0faee6a216d920cb3f41b525e AS nvim_container_base
+FROM quay.io/fedora/fedora:43@sha256:0d6ac603766d9b7021c2a607db42628584215316a7742da722674f3c5c653232 AS nvim_container_base
 
 # Update and install essential packages
 RUN dnf update -y && \

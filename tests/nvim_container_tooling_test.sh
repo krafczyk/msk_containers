@@ -441,7 +441,7 @@ assert_same_arguments 'npm install -g basedpyright ' 'global npm package'
 assert_same_arguments 'npm install --prefix /opt/msk/browser-tools --save-exact ' 'browser npm package'
 
 for dockerfile in "$x86" "$arm"; do
-  assert_active "$dockerfile" 'FROM quay.io/fedora/fedora:43@sha256:b1abe956db4a8f8fcfe8a5d8d03f9ebf61ac76f0faee6a216d920cb3f41b525e'
+  assert_active "$dockerfile" 'FROM quay.io/fedora/fedora:43@sha256:0d6ac603766d9b7021c2a607db42628584215316a7742da722674f3c5c653232'
   assert_active "$dockerfile" 'ENV NODE_VER=24.18.0'
   assert_active "$dockerfile" 'ARG STYLUA_VERSION=2.5.2'
   assert_active "$dockerfile" 'ARG LUACHECK_VERSION=1.2.0-1'
