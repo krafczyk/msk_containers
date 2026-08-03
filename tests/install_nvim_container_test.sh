@@ -26,7 +26,22 @@ cat > "$fake/uname" <<'EOF'
 [[ ${1:-} == -m ]] || exit 64
 printf '%s\n' 'x86_64'
 EOF
-chmod 755 "$fake/apptainer" "$fake/uname"
+cat > "$fake/sync" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+for argument in "$@"; do
+  case $argument in
+    -f | --file-system)
+      printf '%s\n' 'container installer requested a filesystem-wide sync' >&2
+      exit 97
+      ;;
+  esac
+done
+exec "$MKCHAD_TEST_REAL_SYNC" "$@"
+EOF
+chmod 755 "$fake/apptainer" "$fake/uname" "$fake/sync"
+export MKCHAD_TEST_REAL_SYNC
+MKCHAD_TEST_REAL_SYNC=$(command -v sync)
 install -m755 "$installer" "$installed_installer"
 
 printf '%s\n' 'fixture image' > "$raw"

@@ -428,7 +428,7 @@ if (( copy_image )); then
   copied_digest=${copied_digest%% *}
   [[ $copied_digest == "$source_digest" ]] || die "copied image checksum does not match source"
   verify_image "$stage" "$expected_version"
-  sync -f "$stage"
+  sync -- "$stage"
   mv -fT -- "$stage" "$destination"
   stage=
   log "Installed: $destination"
