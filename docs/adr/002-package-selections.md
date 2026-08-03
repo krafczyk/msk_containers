@@ -92,6 +92,17 @@ The x86 and ARM images intentionally provide the same shell and diagnostic tool
 set. PPC64LE remains narrower where its base repositories or upstream artifacts
 do not provide the selected tools.
 
+## Fedora Managed Authoring Tools
+
+`shfmt` and `uv` are Fedora 43 package/update stream selections, not immutable
+exact-version runtime pins. Current Fedora evidence is shfmt 3.7.0 and uv
+0.11.32, but a future `dnf update` may advance either package.
+
+| Package | Architectures | Version/source policy | Purpose |
+| --- | --- | --- | --- |
+| `shfmt` | x86, ARM | Fedora 43 package/update stream | Formats shell source during authoring and testing. |
+| `uv` | x86, ARM | Fedora 43 package/update stream | Provides the Python package and project manager for authoring and testing. |
+
 ## Locale Support
 
 | Packages | Architectures | Reason |
@@ -148,6 +159,24 @@ baseline:
 | `neovim` | All | Unpinned | Provides the Node.js client used by Neovim remote plugins and integrations. |
 | `basedpyright` | All | Unpinned | Provides Python type checking and language-server support. |
 | `agent-browser` | x86, ARM | Pinned to `0.32.2` | Provides the browser-driving CLI used by Compound Engineering browser testing, dogfood, debugging, and visual-polish workflows on both Node.js 24 images. |
+
+## Bun Authoring Runtime
+
+Bun is a separately owned source authoring and testing runtime for x86_64 and
+aarch64. It is not required for normal OpenCode runtime: OpenCode continues to
+use its separately verified release tarball and is not built or installed with
+Bun in the image.
+
+The Dockerfiles download Bun `1.3.14` from the immutable upstream GitHub release
+`bun-v1.3.14` over HTTPS with the failure-preserving curl options used for other
+verified releases. Each archive is verified with its pinned SHA-256 before
+extraction. The image installs the binary at `/opt/msk/bun/bin/bun` and exposes
+`bun` and `bunx` through `/usr/bin` symlinks.
+
+| Architecture | Release asset | SHA-256 |
+| --- | --- | --- |
+| x86_64 | `bun-linux-x64.zip` | `951ee2aee855f08595aeec6225226a298d3fea83a3dcd6465c09cbccdf7e848f` |
+| aarch64 | `bun-linux-aarch64.zip` | `a27ffb63a8310375836e0d6f668ae17fa8d8d18b88c37c821c65331973a19a3b` |
 
 At runtime, MkChad bind-mounts an architecture-neutral writable npm parent at
 `/opt/msk/npm-global`. MkChad derives a Node platform/architecture/major key

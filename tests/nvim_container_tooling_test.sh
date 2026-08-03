@@ -169,10 +169,14 @@ normalized_dockerfile() {
 
   content=$(<"$file")
   content=${content/"$luals_build"/__ARCHITECTURE_SPECIFIC_LUALS_BUILD__}
+  content=${content//bun-linux-x64/bun-linux-CONTAINER_ARCH}
+  content=${content//bun-linux-aarch64/bun-linux-CONTAINER_ARCH}
   content=${content//linux-x64/linux-CONTAINER_ARCH}
   content=${content//linux-arm64/linux-CONTAINER_ARCH}
   content=${content//"$x86_opencode_sha256"/OPENCODE-CONTAINER-SHA256}
   content=${content//"$arm_opencode_sha256"/OPENCODE-CONTAINER-SHA256}
+  content=${content//"$x86_bun_sha256"/BUN-CONTAINER-SHA256}
+  content=${content//"$arm_bun_sha256"/BUN-CONTAINER-SHA256}
   printf '%s' "$content"
 }
 
@@ -291,6 +295,9 @@ arm="$repo/nvim/aarch64/nvim_container_aarch64.dockerfile"
 manifest="$repo/nvim/component-manifest.json"
 x86_opencode_sha256=4cdd0b8c77106c4efdca5278f86ffe5e9af8602aedcfca413600bb3abe778b1a
 arm_opencode_sha256=211562aa07f70baf178fa2e7726839178a256eef26db1b6651d3ba836b021433
+bun_version=1.3.14
+x86_bun_sha256=951ee2aee855f08595aeec6225226a298d3fea83a3dcd6465c09cbccdf7e848f
+arm_bun_sha256=a27ffb63a8310375836e0d6f668ae17fa8d8d18b88c37c821c65331973a19a3b
 x86_definition="$repo/nvim/x86/nvim_container_x86.def"
 arm_definition="$repo/nvim/aarch64/nvim_container_aarch64.def"
 x86_docker_build="$repo/nvim/x86/nvim_container_x86_build_docker.sh"
@@ -376,6 +383,22 @@ assert_contains_once "$arm" 'ARG OPENCODE_VERSION=1.18.9-mkchad.3' 'OpenCode ver
 assert_contains_once "$arm" 'ARG OPENCODE_RELEASE_BASE=https://github.com/krafczyk/opencode/releases/download/v1.18.9-mkchad.3' 'OpenCode release base pin'
 assert_contains_once "$arm" 'ARG OPENCODE_ASSET=opencode-ai-1.18.9-mkchad.3-linux-arm64.tgz' 'OpenCode ARM64 asset pin'
 assert_contains_once "$arm" "ARG OPENCODE_SHA256=$arm_opencode_sha256" 'OpenCode ARM64 checksum pin'
+assert_active "$x86" "ARG BUN_VERSION=$bun_version"
+assert_active "$x86" 'ARG BUN_RELEASE_BASE=https://github.com/oven-sh/bun/releases/download/bun-v1.3.14'
+assert_active "$x86" 'ARG BUN_ASSET=bun-linux-x64.zip'
+assert_active "$x86" "ARG BUN_SHA256=$x86_bun_sha256"
+assert_contains_once "$x86" "ARG BUN_VERSION=$bun_version" 'Bun version pin'
+assert_contains_once "$x86" 'ARG BUN_RELEASE_BASE=https://github.com/oven-sh/bun/releases/download/bun-v1.3.14' 'Bun release base pin'
+assert_contains_once "$x86" 'ARG BUN_ASSET=bun-linux-x64.zip' 'Bun x64 asset pin'
+assert_contains_once "$x86" "ARG BUN_SHA256=$x86_bun_sha256" 'Bun x64 checksum pin'
+assert_active "$arm" "ARG BUN_VERSION=$bun_version"
+assert_active "$arm" 'ARG BUN_RELEASE_BASE=https://github.com/oven-sh/bun/releases/download/bun-v1.3.14'
+assert_active "$arm" 'ARG BUN_ASSET=bun-linux-aarch64.zip'
+assert_active "$arm" "ARG BUN_SHA256=$arm_bun_sha256"
+assert_contains_once "$arm" "ARG BUN_VERSION=$bun_version" 'Bun version pin'
+assert_contains_once "$arm" 'ARG BUN_RELEASE_BASE=https://github.com/oven-sh/bun/releases/download/bun-v1.3.14' 'Bun release base pin'
+assert_contains_once "$arm" 'ARG BUN_ASSET=bun-linux-aarch64.zip' 'Bun ARM64 asset pin'
+assert_contains_once "$arm" "ARG BUN_SHA256=$arm_bun_sha256" 'Bun ARM64 checksum pin'
 assert_active "$x86_definition" 'From: nvim_container_x86.tar'
 assert_not_contains "$x86_definition" 'nvim_container_aarch64'
 assert_active "$arm_definition" 'From: nvim_container_aarch64.tar'
@@ -425,8 +448,11 @@ for dockerfile in "$x86" "$arm"; do
   assert_active "$dockerfile" 'selenium==4.46.0'
   assert_active "$dockerfile" 'py-spy'
   assert_active "$dockerfile" 'openssl-devel memray age'
+  assert_active "$dockerfile" 'ShellCheck shfmt uv'
   assert_active "$dockerfile" 'age --version'
   assert_active "$dockerfile" 'age-keygen --version'
+  assert_active "$dockerfile" 'shfmt --version'
+  assert_active "$dockerfile" 'uv --version'
   assert_active "$dockerfile" 'ENV JDTLS_MILESTONE=1.56.0'
   assert_active "$dockerfile" 'test -x /nvim/jdtls/bin/jdtls'
   assert_not_contains "$dockerfile" '--strip-components=1'
@@ -446,7 +472,27 @@ for dockerfile in "$x86" "$arm"; do
   assert_contains_once "$dockerfile" 'npm install -g "${opencode_tarball}"' 'OpenCode package installation'
   assert_active_before "$dockerfile" 'echo "${OPENCODE_SHA256}  ${opencode_tarball}" | sha256sum --check --strict -' 'npm install -g "${opencode_tarball}"'
   assert_active "$dockerfile" 'test "$(opencode --version)" = "${OPENCODE_VERSION}"'
-  assert_not_contains "$dockerfile" 'BUN_VERSION='
+  assert_active "$dockerfile" 'curl --fail --show-error --location --retry 3 --retry-all-errors --connect-timeout 20 --max-time 1800 --retry-max-time 1800 --proto '\''=https'\'' --tlsv1.2 --output "${bun_archive}"'
+  assert_active "$dockerfile" '"${BUN_RELEASE_BASE}/${BUN_ASSET}"'
+  assert_active "$dockerfile" 'echo "${BUN_SHA256}  ${bun_archive}" | sha256sum --check --strict -'
+  assert_active "$dockerfile" 'unzip -q "${bun_archive}" -d "${bun_extract}"'
+  assert_active "$dockerfile" 'install -D -m 0755 "${bun_extract}/${BUN_ASSET%.zip}/bun" /opt/msk/bun/bin/bun'
+  assert_active "$dockerfile" 'ln -s /opt/msk/bun/bin/bun /usr/bin/bun'
+  assert_active "$dockerfile" 'ln -s /opt/msk/bun/bin/bun /usr/bin/bunx'
+  assert_active "$dockerfile" 'rm -rf "${bun_archive}" "${bun_extract}"'
+  assert_active "$dockerfile" 'test "$(bun --version)" = "${BUN_VERSION}"'
+  assert_active "$dockerfile" 'test "$(bunx --version)" = "${BUN_VERSION}"'
+  assert_contains_once "$dockerfile" 'curl --fail --show-error --location --retry 3 --retry-all-errors --connect-timeout 20 --max-time 1800 --retry-max-time 1800 --proto '\''=https'\'' --tlsv1.2 --output "${bun_archive}"' 'Bun download'
+  assert_contains_once "$dockerfile" 'echo "${BUN_SHA256}  ${bun_archive}" | sha256sum --check --strict -' 'Bun checksum verification'
+  assert_contains_once "$dockerfile" 'unzip -q "${bun_archive}" -d "${bun_extract}"' 'Bun extraction'
+  assert_contains_once "$dockerfile" 'install -D -m 0755 "${bun_extract}/${BUN_ASSET%.zip}/bun" /opt/msk/bun/bin/bun' 'Bun installation'
+  assert_contains_once "$dockerfile" 'ln -s /opt/msk/bun/bin/bun /usr/bin/bun;' 'Bun command link'
+  assert_contains_once "$dockerfile" 'ln -s /opt/msk/bun/bin/bun /usr/bin/bunx;' 'Bunx command link'
+  assert_contains_once "$dockerfile" 'test "$(bun --version)" = "${BUN_VERSION}"' 'Bun version check'
+  assert_contains_once "$dockerfile" 'test "$(bunx --version)" = "${BUN_VERSION}"' 'Bunx version check'
+  assert_active_before "$dockerfile" 'echo "${BUN_SHA256}  ${bun_archive}" | sha256sum --check --strict -' 'install -D -m 0755 "${bun_extract}/${BUN_ASSET%.zip}/bun" /opt/msk/bun/bin/bun'
+  assert_active_before "$dockerfile" 'echo "${BUN_SHA256}  ${bun_archive}" | sha256sum --check --strict -' 'unzip -q "${bun_archive}" -d "${bun_extract}"'
+  assert_active_before "$dockerfile" 'install -D -m 0755 "${bun_extract}/${BUN_ASSET%.zip}/bun" /opt/msk/bun/bin/bun' 'test "$(bun --version)" = "${BUN_VERSION}"'
   assert_not_contains "$dockerfile" '"bun@${BUN_VERSION}"'
   assert_not_contains "$dockerfile" 'bun install --frozen-lockfile'
   assert_not_contains "$dockerfile" 'https://github.com/krafczyk/opencode.git'
@@ -477,6 +523,10 @@ assert_not_contains_case_insensitive "$repo/nvim/ppc64le/nvim_container_ppc64le.
 
 assert_contains "$adr" '| `ffmpeg-free` | All |'
 assert_contains "$adr" '| `ShellCheck` | All |'
+assert_contains "$adr" '| `shfmt` | x86, ARM | Fedora 43 package/update stream |'
+assert_contains "$adr" '| `uv` | x86, ARM | Fedora 43 package/update stream |'
+assert_contains "$adr" 'not immutable'
+assert_contains "$adr" 'exact-version runtime pins'
 assert_contains "$adr" '| `age` | x86, ARM |'
 assert_contains "$adr" '| `jsonschema` | All | `>=4.23,<5` |'
 assert_contains "$adr" '| ast-grep | All | Cargo crate pinned to `0.44.1` with `--locked` |'
@@ -488,6 +538,14 @@ assert_contains "$adr" 'OpenCode does not publish a Linux PPC64LE binary'
 assert_contains "$adr" '`1.18.9-mkchad.3`'
 assert_contains "$adr" '`4cdd0b8c77106c4efdca5278f86ffe5e9af8602aedcfca413600bb3abe778b1a`'
 assert_contains "$adr" '`211562aa07f70baf178fa2e7726839178a256eef26db1b6651d3ba836b021433`'
+assert_contains "$adr" '`1.3.14`'
+assert_contains "$adr" '`bun-v1.3.14`'
+assert_contains "$adr" '`bun-linux-x64.zip`'
+assert_contains "$adr" '`951ee2aee855f08595aeec6225226a298d3fea83a3dcd6465c09cbccdf7e848f`'
+assert_contains "$adr" '`bun-linux-aarch64.zip`'
+assert_contains "$adr" '`a27ffb63a8310375836e0d6f668ae17fa8d8d18b88c37c821c65331973a19a3b`'
+assert_contains "$adr" 'source authoring and testing'
+assert_contains "$adr" 'not required for normal OpenCode runtime'
 assert_contains "$adr" 'Keep the x86_64 and aarch64 images at functional parity'
 
 printf '%s\n' 'nvim container tooling tests passed'

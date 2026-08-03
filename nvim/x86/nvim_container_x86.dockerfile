@@ -7,7 +7,7 @@ RUN dnf update -y && \
     make cmake zsh python3 python3-devel \
     python3-pip python3-virtualenv \
     rust cargo luarocks gh \
-    zip unzip tar gettext curl jq ShellCheck \
+    zip unzip tar gettext curl jq ShellCheck shfmt uv \
     java-21-openjdk-devel \
     java-21-openjdk-jmods \
     maven xclip which ripgrep pgrep \
@@ -27,6 +27,8 @@ RUN dnf update -y && \
     openssl-devel memray age && \
     age --version && \
     age-keygen --version && \
+    shfmt --version && \
+    uv --version && \
     dnf clean all
 
 # Generate the locales
@@ -66,6 +68,25 @@ RUN mkdir -p /nvim && \
 ENV PATH="/nvim/node-v${NODE_VER}-linux-x64/bin:$PATH"
 
 RUN npm install -g neovim
+
+# Bun supports source authoring and testing; OpenCode uses its verified release.
+ARG BUN_VERSION=1.3.14
+ARG BUN_RELEASE_BASE=https://github.com/oven-sh/bun/releases/download/bun-v1.3.14
+ARG BUN_ASSET=bun-linux-x64.zip
+ARG BUN_SHA256=951ee2aee855f08595aeec6225226a298d3fea83a3dcd6465c09cbccdf7e848f
+RUN set -eux; \
+    bun_archive="/tmp/${BUN_ASSET}"; \
+    bun_extract="/tmp/bun"; \
+    curl --fail --show-error --location --retry 3 --retry-all-errors --connect-timeout 20 --max-time 1800 --retry-max-time 1800 --proto '=https' --tlsv1.2 --output "${bun_archive}" \
+      "${BUN_RELEASE_BASE}/${BUN_ASSET}"; \
+    echo "${BUN_SHA256}  ${bun_archive}" | sha256sum --check --strict -; \
+    unzip -q "${bun_archive}" -d "${bun_extract}"; \
+    install -D -m 0755 "${bun_extract}/${BUN_ASSET%.zip}/bun" /opt/msk/bun/bin/bun; \
+    ln -s /opt/msk/bun/bin/bun /usr/bin/bun; \
+    ln -s /opt/msk/bun/bin/bun /usr/bin/bunx; \
+    rm -rf "${bun_archive}" "${bun_extract}"; \
+    test "$(bun --version)" = "${BUN_VERSION}"; \
+    test "$(bunx --version)" = "${BUN_VERSION}"
 
 ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk
 
