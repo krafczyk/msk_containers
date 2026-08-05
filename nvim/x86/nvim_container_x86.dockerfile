@@ -4,6 +4,8 @@ FROM quay.io/fedora/fedora:43@sha256:0d6ac603766d9b7021c2a607db42628584215316a77
 # Update and install essential packages
 RUN dnf update -y && \
     dnf install -y wget git gcc gcc-c++ \
+    bubblewrap libtalloc-devel pkgconf-pkg-config \
+    musl-gcc musl-devel musl-libc-static \
     make cmake zsh python3 python3-devel \
     python3-pip python3-virtualenv \
     rust cargo luarocks gh \
@@ -33,6 +35,18 @@ RUN dnf update -y && \
 
 # Generate the locales
 RUN localedef -i en_US -f UTF-8 en_US.UTF-8
+
+ARG PROOT_VERSION=v5.4.0
+ARG PROOT_REVISION=bd5a5f63d72f8210d8cee76195eb9f0749e5bd70
+ARG PROOT_UTHASH_REVISION=e493aa90a2833b4655927598f169c31cfcdf7861
+# U2 builds only PRoot from this verified checkout and installs it under /opt/msk.
+RUN set -eux; \
+    git clone https://github.com/proot-me/proot.git /tmp/proot; \
+    git -C /tmp/proot checkout --detach "${PROOT_REVISION}"; \
+    test "$(git -C /tmp/proot rev-parse HEAD)" = "${PROOT_REVISION}"; \
+    test "$(git -C /tmp/proot ls-tree HEAD lib/uthash | awk '{print $3}')" = "${PROOT_UTHASH_REVISION}"; \
+    git -C /tmp/proot submodule update --init lib/uthash; \
+    test "$(git -C /tmp/proot/lib/uthash rev-parse HEAD)" = "${PROOT_UTHASH_REVISION}"
 
 ARG STYLUA_VERSION=2.5.2
 ARG AST_GREP_VERSION=0.44.1

@@ -66,6 +66,44 @@ Fedora package names, but DNF may satisfy an executable capability such as
 | `zip`, `unzip`, `tar` | All | Extract and create the archive formats used by downloaded toolchains, language servers, and development workflows. |
 | `gettext` | All | Provides translation and message-catalog tooling used by the Neovim build. |
 
+## Host Bridge Prerequisites
+
+The x86_64 and aarch64 Fedora 43 images select the following direct RPMs from
+the Fedora 43 package/update stream. They provide complementary full-root
+backends and the native musl toolchain required by the future C11 host bridge.
+PPC64LE is explicitly excluded: the host-bridge plan supports only the x86_64
+and aarch64 Neovim images, so its Dockerfile receives none of these selections.
+
+| Package | Architectures | Version/source policy | Purpose |
+| --- | --- | --- | --- |
+| `bubblewrap` | x86, ARM | Fedora 43 package/update stream | Provides the mount-namespace full-root backend. |
+| `libtalloc-devel` | x86, ARM | Fedora 43 package/update stream | Provides the talloc development interface required to build PRoot. |
+| `pkgconf-pkg-config` | x86, ARM | Fedora 43 package/update stream | Provides explicit PRoot build dependency discovery. |
+| `musl-gcc` | x86, ARM | Fedora 43 package/update stream | Provides the native musl compiler wrapper for static C11 executables. |
+| `musl-devel` | x86, ARM | Fedora 43 package/update stream | Provides native musl headers and development metadata. |
+| `musl-libc-static` | x86, ARM | Fedora 43 package/update stream | Provides the native static musl C library. |
+
+PRoot is built from its upstream Git repository rather than downloaded as a
+binary. Both maintained Dockerfiles clone
+`https://github.com/proot-me/proot.git`, detach at the exact root revision,
+verify that `HEAD`, the `lib/uthash` gitlink, and the checked-out
+`lib/uthash` submodule all match the selections below, and initialize no other
+submodules. This avoids mutable branch inputs, recursive source expansion, and
+source archives without Git provenance. CARE, QEMU, and other PRoot utilities
+are not built or installed.
+
+| Component | Architectures | Version/source policy | Purpose |
+| --- | --- | --- | --- |
+| PRoot | x86, ARM | Release `v5.4.0`, root commit `bd5a5f63d72f8210d8cee76195eb9f0749e5bd70` | Provides the ptrace-backed full-root fallback when the host policy does not permit Bubblewrap. |
+| PRoot `lib/uthash` | x86, ARM | Required gitlink and checked-out submodule commit `e493aa90a2833b4655927598f169c31cfcdf7861` | Provides PRoot's required hash-table header dependency. |
+
+The verified build checkout is staged at `/tmp/proot`. A later image-build unit
+will install only the PRoot executable and its required files under
+`/opt/msk/proot`, expose only `proot` through `/usr/bin/proot`, and retain the
+applicable upstream PRoot and `lib/uthash` license material under that isolated
+prefix. U1 declares and verifies the source provenance only; it does not compile
+or install PRoot.
+
 ## Shell and Command-Line Utilities
 
 | Packages | Architectures | Reason |
