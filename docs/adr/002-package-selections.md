@@ -97,12 +97,12 @@ are not built or installed.
 | PRoot | x86, ARM | Release `v5.4.0`, root commit `bd5a5f63d72f8210d8cee76195eb9f0749e5bd70` | Provides the ptrace-backed full-root fallback when the host policy does not permit Bubblewrap. |
 | PRoot `lib/uthash` | x86, ARM | Required gitlink and checked-out submodule commit `e493aa90a2833b4655927598f169c31cfcdf7861` | Provides PRoot's required hash-table header dependency. |
 
-The verified build checkout is staged at `/tmp/proot`. A later image-build unit
-will install only the PRoot executable and its required files under
-`/opt/msk/proot`, expose only `proot` through `/usr/bin/proot`, and retain the
-applicable upstream PRoot and `lib/uthash` license material under that isolated
-prefix. U1 declares and verifies the source provenance only; it does not compile
-or install PRoot.
+The verified build checkout is staged at `/tmp/proot`. Each image builds only
+the `proot` target, installs the executable under `/opt/msk/proot`, and exposes
+it through `/usr/bin/proot`. The isolated prefix retains the applicable upstream
+PRoot and `lib/uthash` license material. Image construction also starts both
+backend commands and compiles, inspects, and runs a temporary static C11 program
+with the native musl toolchain before removing the checkout and smoke artifacts.
 
 ## Shell and Command-Line Utilities
 

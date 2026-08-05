@@ -39,14 +39,36 @@ RUN localedef -i en_US -f UTF-8 en_US.UTF-8
 ARG PROOT_VERSION=v5.4.0
 ARG PROOT_REVISION=bd5a5f63d72f8210d8cee76195eb9f0749e5bd70
 ARG PROOT_UTHASH_REVISION=e493aa90a2833b4655927598f169c31cfcdf7861
-# U2 builds only PRoot from this verified checkout and installs it under /opt/msk.
+# PRoot derives its version from Git refs, so retain only the verified release tag.
 RUN set -eux; \
-    git clone https://github.com/proot-me/proot.git /tmp/proot; \
+    git clone --depth 1 --single-branch --branch "${PROOT_VERSION}" \
+      https://github.com/proot-me/proot.git /tmp/proot; \
     git -C /tmp/proot checkout --detach "${PROOT_REVISION}"; \
     test "$(git -C /tmp/proot rev-parse HEAD)" = "${PROOT_REVISION}"; \
     test "$(git -C /tmp/proot ls-tree HEAD lib/uthash | awk '{print $3}')" = "${PROOT_UTHASH_REVISION}"; \
     git -C /tmp/proot submodule update --init lib/uthash; \
-    test "$(git -C /tmp/proot/lib/uthash rev-parse HEAD)" = "${PROOT_UTHASH_REVISION}"
+    test "$(git -C /tmp/proot/lib/uthash rev-parse HEAD)" = "${PROOT_UTHASH_REVISION}"; \
+    make -C /tmp/proot/src proot; \
+    install -D -m 0755 /tmp/proot/src/proot /opt/msk/proot/bin/proot; \
+    install -D -m 0644 /tmp/proot/COPYING /opt/msk/proot/licenses/proot/COPYING; \
+    install -D -m 0644 /tmp/proot/lib/uthash/LICENSE /opt/msk/proot/licenses/uthash/LICENSE; \
+    ln -s /opt/msk/proot/bin/proot /usr/bin/proot; \
+    rm -rf /tmp/proot; \
+    bwrap --version; \
+    test -x /opt/msk/proot/bin/proot; \
+    test -L /usr/bin/proot; \
+    test "$(readlink /usr/bin/proot)" = /opt/msk/proot/bin/proot; \
+    test -f /opt/msk/proot/licenses/proot/COPYING; \
+    test -f /opt/msk/proot/licenses/uthash/LICENSE; \
+    proot --version | grep -Eq " ${PROOT_VERSION}(-[0-9a-f]{8})?$"; \
+    smoke_dir=/tmp/msk-proot-smoke; \
+    mkdir -p "${smoke_dir}"; \
+    printf '%s\n' '#include <stdio.h>' 'int main(void) { puts("hello"); return 0; }' > "${smoke_dir}/hello.c"; \
+    musl-gcc -std=c11 -static "${smoke_dir}/hello.c" -o "${smoke_dir}/hello"; \
+    LC_ALL=C readelf -lW "${smoke_dir}/hello" > "${smoke_dir}/program-headers"; \
+    ! grep -Fq ' INTERP ' "${smoke_dir}/program-headers"; \
+    "${smoke_dir}/hello"; \
+    rm -rf "${smoke_dir}"
 
 ARG STYLUA_VERSION=2.5.2
 ARG AST_GREP_VERSION=0.44.1
