@@ -126,6 +126,28 @@ command_arguments() {
   done < "$file"
 }
 
+dnf_has_package() {
+  local file=$1
+  local package=$2
+  local argument
+
+  while IFS= read -r argument; do
+    [[ $argument == "$package" ]] && return 0
+  done < <(command_arguments "$file" 'dnf install -y ')
+
+  return 1
+}
+
+assert_dnf_package() {
+  local file=$1
+  local package=$2
+
+  dnf_has_package "$file" "$package" || {
+    printf 'missing DNF install operand %q in %s\n' "$package" "$file" >&2
+    exit 1
+  }
+}
+
 assert_same_arguments() {
   local marker=$1
   local description=$2
@@ -158,6 +180,29 @@ assert_contains_once() {
   remainder=${content#*"$expected"}
   if [[ $remainder == "$content" || $remainder == *"$expected"* ]]; then
     printf '%s must contain exactly one expected %s block\n' "$file" "$description" >&2
+    exit 1
+  fi
+}
+
+assert_active_once() {
+  local file=$1
+  local expected=$2
+  local description=$3
+  local line
+  local trimmed
+  local count=0
+
+  while IFS= read -r line || [[ -n $line ]]; do
+    trimmed=${line#"${line%%[![:space:]]*}"}
+    [[ $trimmed == \#* ]] && continue
+    line=${line%%[[:space:]]#*}
+    if [[ $line == *"$expected"* ]]; then
+      ((count += 1))
+    fi
+  done < "$file"
+
+  if (( count != 1 )); then
+    printf '%s must contain exactly one active %s\n' "$file" "$description" >&2
     exit 1
   fi
 }
@@ -535,27 +580,32 @@ for dockerfile in "$x86" "$arm"; do
   assert_not_contains "$dockerfile" 'agent-browser install'
   for package in \
     bubblewrap libtalloc-devel pkgconf-pkg-config musl-gcc musl-devel musl-libc-static; do
-    assert_active "$dockerfile" "$package"
+    assert_dnf_package "$dockerfile" "$package"
   done
-  assert_active "$dockerfile" 'ARG PROOT_VERSION=v5.4.0'
-  assert_active "$dockerfile" 'ARG PROOT_REVISION=bd5a5f63d72f8210d8cee76195eb9f0749e5bd70'
-  assert_active "$dockerfile" 'ARG PROOT_UTHASH_REVISION=e493aa90a2833b4655927598f169c31cfcdf7861'
-  assert_active "$dockerfile" 'git clone --depth 1 --single-branch --branch "${PROOT_VERSION}"'
-  assert_contains_once "$dockerfile" 'git clone --depth 1 --single-branch --branch "${PROOT_VERSION}"' 'PRoot release checkout'
-  assert_active "$dockerfile" 'https://github.com/proot-me/proot.git /tmp/proot'
-  assert_active "$dockerfile" 'git -C /tmp/proot checkout --detach "${PROOT_REVISION}"'
-  assert_active "$dockerfile" 'test "$(git -C /tmp/proot rev-parse HEAD)" = "${PROOT_REVISION}"'
-  assert_active "$dockerfile" 'test "$(git -C /tmp/proot ls-tree --object-only HEAD lib/uthash)" = "${PROOT_UTHASH_REVISION}"'
-  assert_active "$dockerfile" 'git -C /tmp/proot submodule update --init lib/uthash'
+  assert_active_once "$dockerfile" 'ARG PROOT_VERSION=v5.4.0' 'PRoot version pin'
+  assert_active_once "$dockerfile" 'ARG PROOT_REVISION=bd5a5f63d72f8210d8cee76195eb9f0749e5bd70' 'PRoot revision pin'
+  assert_active_once "$dockerfile" 'ARG PROOT_UTHASH_REVISION=e493aa90a2833b4655927598f169c31cfcdf7861' 'PRoot uthash revision pin'
+  assert_active_once "$dockerfile" 'git clone --depth 1 --single-branch --branch "${PROOT_VERSION}"' 'PRoot release checkout'
+  assert_active_once "$dockerfile" 'git -C /tmp/proot checkout --detach "${PROOT_REVISION}"' 'PRoot detached checkout'
+  assert_active_once "$dockerfile" 'test "$(git -C /tmp/proot rev-parse HEAD)" = "${PROOT_REVISION}"' 'PRoot root revision verification'
+  assert_active_once "$dockerfile" 'test "$(git -C /tmp/proot ls-tree --object-only HEAD lib/uthash)" = "${PROOT_UTHASH_REVISION}"' 'PRoot uthash gitlink verification'
+  assert_active_once "$dockerfile" 'git -C /tmp/proot submodule update --init lib/uthash' 'PRoot uthash initialization'
   assert_not_contains "$dockerfile" 'git -C /tmp/proot submodule update --init --recursive'
-  assert_active "$dockerfile" 'test "$(git -C /tmp/proot/lib/uthash rev-parse HEAD)" = "${PROOT_UTHASH_REVISION}"'
-  assert_active "$dockerfile" 'make -C /tmp/proot/src proot'
+  assert_active_once "$dockerfile" 'test "$(git -C /tmp/proot/lib/uthash rev-parse HEAD)" = "${PROOT_UTHASH_REVISION}"' 'PRoot uthash revision verification'
+  assert_active_once "$dockerfile" 'make -C /tmp/proot/src proot' 'PRoot build'
   assert_only_proot_make_target "$dockerfile"
   assert_not_contains "$dockerfile" 'make -C /tmp/proot/src care'
   assert_not_contains "$dockerfile" 'make -C /tmp/proot/src qemu'
   assert_not_contains_case_insensitive "$dockerfile" 'care'
   assert_not_contains_case_insensitive "$dockerfile" 'qemu'
-  assert_active "$dockerfile" 'install -D -m 0755 /tmp/proot/src/proot /opt/msk/proot/bin/proot'
+  assert_active_once "$dockerfile" 'install -D -m 0755 /tmp/proot/src/proot /opt/msk/proot/bin/proot' 'PRoot installation'
+  assert_active_before "$dockerfile" 'git clone --depth 1 --single-branch --branch "${PROOT_VERSION}"' 'git -C /tmp/proot checkout --detach "${PROOT_REVISION}"'
+  assert_active_before "$dockerfile" 'git -C /tmp/proot checkout --detach "${PROOT_REVISION}"' 'test "$(git -C /tmp/proot rev-parse HEAD)" = "${PROOT_REVISION}"'
+  assert_active_before "$dockerfile" 'test "$(git -C /tmp/proot rev-parse HEAD)" = "${PROOT_REVISION}"' 'test "$(git -C /tmp/proot ls-tree --object-only HEAD lib/uthash)" = "${PROOT_UTHASH_REVISION}"'
+  assert_active_before "$dockerfile" 'test "$(git -C /tmp/proot ls-tree --object-only HEAD lib/uthash)" = "${PROOT_UTHASH_REVISION}"' 'git -C /tmp/proot submodule update --init lib/uthash'
+  assert_active_before "$dockerfile" 'git -C /tmp/proot submodule update --init lib/uthash' 'test "$(git -C /tmp/proot/lib/uthash rev-parse HEAD)" = "${PROOT_UTHASH_REVISION}"'
+  assert_active_before "$dockerfile" 'test "$(git -C /tmp/proot/lib/uthash rev-parse HEAD)" = "${PROOT_UTHASH_REVISION}"' 'make -C /tmp/proot/src proot'
+  assert_active_before "$dockerfile" 'make -C /tmp/proot/src proot' 'install -D -m 0755 /tmp/proot/src/proot /opt/msk/proot/bin/proot'
   assert_active "$dockerfile" 'install -D -m 0644 /tmp/proot/COPYING /opt/msk/proot/licenses/proot/COPYING'
   assert_active "$dockerfile" 'install -D -m 0644 /tmp/proot/lib/uthash/LICENSE /opt/msk/proot/licenses/uthash/LICENSE'
   assert_active "$dockerfile" 'ln -s /opt/msk/proot/bin/proot /usr/bin/proot'
@@ -571,6 +621,21 @@ for dockerfile in "$x86" "$arm"; do
   assert_active "$dockerfile" "! grep -Fq ' INTERP '"
   assert_active "$dockerfile" '"${smoke_dir}/hello"'
   assert_active "$dockerfile" 'rm -rf "${smoke_dir}"'
+done
+
+# Removing a package from both image variants must fail even though its smoke
+# command still mentions the package name.
+for architecture in x86 aarch64; do
+  source_dockerfile=$repo/nvim/$architecture/nvim_container_${architecture}.dockerfile
+  fixture_dockerfile=$test_tmpdir/nvim_container_${architecture}.dockerfile
+  fixture_content=$(<"$source_dockerfile")
+  fixture_content=${fixture_content/'musl-gcc '/}
+  printf '%s' "$fixture_content" > "$fixture_dockerfile"
+  assert_active "$fixture_dockerfile" 'musl-gcc -std=c11 -static'
+  if dnf_has_package "$fixture_dockerfile" musl-gcc; then
+    printf 'DNF package guard accepted removed musl-gcc in %s\n' "$fixture_dockerfile" >&2
+    exit 1
+  fi
 done
 
 assert_active "$arm" 'git submodule update --init --recursive'
@@ -635,9 +700,16 @@ make_bwrap_fixture() {
   printf '%s\n' \
     '#!/usr/bin/env bash' \
     'set -euo pipefail' \
-    'if [[ ${1:-} == --version ]]; then printf "%s\\n" "${HB_BWRAP_VERSION}"; exit 0; fi' \
+    'if [[ ${1:-} == --version ]]; then' \
+    '  printf "%s\\n" "${HB_BWRAP_VERSION}"' \
+    '  sleep "${HB_BWRAP_VERSION_DELAY:-0}"' \
+    '  exit "${HB_BWRAP_VERSION_STATUS:-0}"' \
+    'fi' \
     'printf "%s\\n" "$*" >> "${HB_FIXTURE_LOG}"' \
     '[[ $* == "--unshare-user --uid 0 --gid 0 --ro-bind / / --dev /dev --proc /proc -- /bin/true" ]]' \
+    'printf "%s\\n" bwrap-operation-stdout' \
+    'printf "%s\\n" bwrap-operation-stderr >&2' \
+    'if [[ ${HB_BWRAP_IGNORE_TERM:-false} == true ]]; then trap "" TERM; while :; do :; done; fi' \
     'sleep "${HB_BWRAP_DELAY:-0}"' \
     'exit "${HB_BWRAP_STATUS:-0}"' > "$path"
   chmod +x "$path"
@@ -649,12 +721,19 @@ make_proot_fixture() {
   printf '%s\n' \
     '#!/usr/bin/env bash' \
     'set -euo pipefail' \
-    'if [[ ${1:-} == --version ]]; then printf "%s\\n" "${HB_PROOT_VERSION}"; exit 0; fi' \
+    'if [[ ${1:-} == --version ]]; then' \
+    '  printf "%s\\n" "${HB_PROOT_VERSION}"' \
+    '  sleep "${HB_PROOT_VERSION_DELAY:-0}"' \
+    '  exit "${HB_PROOT_VERSION_STATUS:-0}"' \
+    'fi' \
     'printf "%s\\n" "$*" >> "${HB_FIXTURE_LOG}"' \
     '[[ $* == "-r / /bin/true" ]]' \
+    'printf "%s\\n" proot-operation-stdout' \
+    'printf "%s\\n" proot-operation-stderr >&2' \
     'if [[ -n ${HB_PROOT_WRITE_PATH:-} ]]; then' \
     '  for ((i = 0; i < 64; i++)); do printf "%1024s" x; done > "${HB_PROOT_WRITE_PATH}"' \
     'fi' \
+    'if [[ ${HB_PROOT_IGNORE_TERM:-false} == true ]]; then trap "" TERM; while :; do :; done; fi' \
     'sleep "${HB_PROOT_DELAY:-0}"' \
     'exit "${HB_PROOT_STATUS:-0}"' > "$path"
   chmod +x "$path"
@@ -679,15 +758,17 @@ assert_runtime_json() {
   local architecture=$2
   local runtime_kind=$3
   local bwrap_installed=$4
-  local bwrap_operational=$5
-  local bwrap_reason=$6
-  local proot_installed=$7
-  local proot_operational=$8
-  local proot_reason=$9
+  local bwrap_version_valid=$5
+  local bwrap_operational=$6
+  local bwrap_reason=$7
+  local proot_installed=$8
+  local proot_version_valid=$9
+  local proot_operational=${10}
+  local proot_reason=${11}
 
   python3 - "$output" "$architecture" "$runtime_kind" \
-    "$bwrap_installed" "$bwrap_operational" "$bwrap_reason" \
-    "$proot_installed" "$proot_operational" "$proot_reason" <<'PY'
+    "$bwrap_installed" "$bwrap_version_valid" "$bwrap_operational" "$bwrap_reason" \
+    "$proot_installed" "$proot_version_valid" "$proot_operational" "$proot_reason" <<'PY'
 import json
 import sys
 
@@ -695,15 +776,15 @@ result = json.loads(sys.argv[1])
 assert result["schema"] == "mkchad.host-bridge-backend-runtime/v1"
 assert result["architecture"] == sys.argv[2]
 assert result["runtime_kind"] == sys.argv[3]
-for name, installed, operational, reason in (
-    ("bubblewrap", sys.argv[4] == "true", sys.argv[5] == "true", sys.argv[6]),
-    ("proot", sys.argv[7] == "true", sys.argv[8] == "true", sys.argv[9]),
+for name, installed, version_valid, operational, reason in (
+    ("bubblewrap", sys.argv[4] == "true", sys.argv[5] == "true", sys.argv[6] == "true", sys.argv[7]),
+    ("proot", sys.argv[8] == "true", sys.argv[9] == "true", sys.argv[10] == "true", sys.argv[11]),
 ):
     backend = result["backends"][name]
     assert backend["installed"] is installed
     assert backend["operational"] is operational
     assert backend["reason"] == reason
-    assert backend["version_valid"] is installed
+    assert backend["version_valid"] is version_valid
 PY
 }
 
@@ -724,11 +805,17 @@ case $(uname -m) in
   *) default_runtime_architecture=unknown ;;
 esac
 
-runtime_output=$(HB_FIXTURE_LOG=$fixture_log \
+HB_FIXTURE_LOG=$fixture_log \
   HB_BWRAP_VERSION='bubblewrap 0.11.0' HB_PROOT_VERSION="$proot_version_pinned" \
   "$runtime_test" --bwrap "$bwrap_fixture" --proot "$proot_fixture" \
-  --timeout 2 --architecture x86_64 --runtime-kind docker)
-assert_runtime_json "$runtime_output" x86_64 docker true true operational true true operational
+  --timeout 2 --architecture x86_64 --runtime-kind docker \
+  > "$runtime_fixture_dir/valid.stdout" 2> "$runtime_fixture_dir/valid.stderr"
+runtime_output=$(<"$runtime_fixture_dir/valid.stdout")
+assert_runtime_json "$runtime_output" x86_64 docker true true true operational true true true operational
+if [[ -s $runtime_fixture_dir/valid.stderr ]]; then
+  printf '%s\n' 'runtime test leaked backend diagnostics for valid operations' >&2
+  exit 1
+fi
 assert_contains "$fixture_log" '--unshare-user --uid 0 --gid 0 --ro-bind / / --dev /dev --proc /proc -- /bin/true'
 assert_contains "$fixture_log" '-r / /bin/true'
 
@@ -737,7 +824,7 @@ runtime_output=$(HB_FIXTURE_LOG=$fixture_log \
   HB_BWRAP_VERSION='bubblewrap 0.11.0' HB_PROOT_VERSION="$proot_version_release" \
   HB_PROOT_WRITE_PATH=$proot_operation_file \
   "$runtime_test" --bwrap "$bwrap_fixture" --proot "$proot_fixture")
-assert_runtime_json "$runtime_output" "$default_runtime_architecture" direct true true operational true true operational
+assert_runtime_json "$runtime_output" "$default_runtime_architecture" direct true true true operational true true true operational
 if [[ ! -s $proot_operation_file ]]; then
   printf '%s\n' 'runtime test constrained backend operation files' >&2
   exit 1
@@ -748,36 +835,60 @@ runtime_output=$(HB_FIXTURE_LOG=$fixture_log \
   HB_PROOT_VERSION="$proot_version_release" \
   "$runtime_test" --bwrap "$bwrap_fixture" --proot "$proot_fixture" \
   --architecture arm64 --runtime-kind sif)
-assert_runtime_json "$runtime_output" aarch64 sif true false operation-failed true true operational
+assert_runtime_json "$runtime_output" aarch64 sif true true false policy-or-runtime-denied true true true operational
 
 runtime_output=$(HB_FIXTURE_LOG=$fixture_log \
   HB_BWRAP_VERSION='bubblewrap 0.11.0' \
   HB_PROOT_VERSION="$proot_version_release" HB_PROOT_STATUS=1 \
   "$runtime_test" --bwrap "$bwrap_fixture" --proot "$proot_fixture")
-assert_runtime_json "$runtime_output" "$default_runtime_architecture" direct true true operational true false operation-failed
+assert_runtime_json "$runtime_output" "$default_runtime_architecture" direct true true true operational true true false policy-or-runtime-denied
 
 runtime_output=$(HB_FIXTURE_LOG=$fixture_log \
   HB_BWRAP_VERSION='bubblewrap 0.11.0' HB_BWRAP_STATUS=1 \
   HB_PROOT_VERSION="$proot_version_release" HB_PROOT_STATUS=1 \
   "$runtime_test" --bwrap "$bwrap_fixture" --proot "$proot_fixture")
-assert_runtime_json "$runtime_output" "$default_runtime_architecture" direct true false operation-failed true false operation-failed
+assert_runtime_json "$runtime_output" "$default_runtime_architecture" direct true true false policy-or-runtime-denied true true false policy-or-runtime-denied
+
+runtime_output=$(HB_FIXTURE_LOG=$fixture_log \
+  HB_BWRAP_VERSION='bubblewrap 0.11.0' HB_BWRAP_STATUS=124 \
+  HB_PROOT_VERSION="$proot_version_release" HB_PROOT_STATUS=137 \
+  "$runtime_test" --bwrap "$bwrap_fixture" --proot "$proot_fixture")
+assert_runtime_json "$runtime_output" "$default_runtime_architecture" direct true true false policy-or-runtime-denied true true false policy-or-runtime-denied
 
 runtime_output=$("$runtime_test" --bwrap "$runtime_fixture_dir/missing-bwrap" --proot "$proot_fixture")
-assert_runtime_json "$runtime_output" "$default_runtime_architecture" direct false false missing false false invalid-version
+assert_runtime_json "$runtime_output" "$default_runtime_architecture" direct false false false missing true false false invalid-version
 
 runtime_output=$("$runtime_test" --bwrap "$runtime_fixture_dir/missing-bwrap" --proot "$runtime_fixture_dir/missing-proot")
-assert_runtime_json "$runtime_output" "$default_runtime_architecture" direct false false missing false false missing
+assert_runtime_json "$runtime_output" "$default_runtime_architecture" direct false false false missing false false false missing
 
 runtime_output=$(HB_FIXTURE_LOG=$fixture_log \
   HB_BWRAP_VERSION='bubblewrap malformed' HB_PROOT_VERSION='proot stale' \
   "$runtime_test" --bwrap "$bwrap_fixture" --proot "$proot_fixture")
-assert_runtime_json "$runtime_output" "$default_runtime_architecture" direct false false invalid-version false false invalid-version
+assert_runtime_json "$runtime_output" "$default_runtime_architecture" direct true false false invalid-version true false false invalid-version
 
 runtime_output=$(HB_FIXTURE_LOG=$fixture_log \
   HB_BWRAP_VERSION='bubblewrap 0.11.0' HB_BWRAP_DELAY=2 \
   HB_PROOT_VERSION="$proot_version_release" \
   "$runtime_test" --bwrap "$bwrap_fixture" --proot "$proot_fixture" --timeout 1)
-assert_runtime_json "$runtime_output" "$default_runtime_architecture" direct true false timeout true true operational
+assert_runtime_json "$runtime_output" "$default_runtime_architecture" direct true true false timeout true true true operational
+
+runtime_output=$(HB_FIXTURE_LOG=$fixture_log \
+  HB_BWRAP_VERSION='bubblewrap 0.11.0' \
+  HB_PROOT_VERSION="$proot_version_release" HB_PROOT_IGNORE_TERM=true \
+  "$runtime_test" --bwrap "$bwrap_fixture" --proot "$proot_fixture" --timeout 1)
+assert_runtime_json "$runtime_output" "$default_runtime_architecture" direct true true true operational true true false timeout
+
+runtime_output=$(HB_FIXTURE_LOG=$fixture_log \
+  HB_BWRAP_VERSION='bubblewrap 0.11.0' HB_BWRAP_VERSION_DELAY=2 \
+  HB_PROOT_VERSION="$proot_version_release" \
+  "$runtime_test" --bwrap "$bwrap_fixture" --proot "$proot_fixture" --timeout 1)
+assert_runtime_json "$runtime_output" "$default_runtime_architecture" direct true false false timeout true true true operational
+
+runtime_output=$(HB_FIXTURE_LOG=$fixture_log \
+  HB_BWRAP_VERSION='bubblewrap 0.11.0' \
+  HB_PROOT_VERSION="$proot_version_release" HB_PROOT_VERSION_DELAY=2 \
+  "$runtime_test" --bwrap "$bwrap_fixture" --proot "$proot_fixture" --timeout 1)
+assert_runtime_json "$runtime_output" "$default_runtime_architecture" direct true true true operational true false false timeout
 
 runtime_probe_tmp="$runtime_fixture_dir/tmp"
 mkdir -p "$runtime_probe_tmp"
@@ -785,7 +896,7 @@ runtime_output=$(TMPDIR=$runtime_probe_tmp HB_FIXTURE_LOG=$fixture_log \
   HB_PROOT_VERSION="$proot_version_release" \
   "$runtime_test" --bwrap "$noisy_version_fixture" --proot "$proot_fixture" --timeout 1 \
   2> "$runtime_fixture_dir/noisy.stderr")
-assert_runtime_json "$runtime_output" "$default_runtime_architecture" direct false false invalid-version true true operational
+assert_runtime_json "$runtime_output" "$default_runtime_architecture" direct true false false invalid-version true true true operational
 if [[ -s $runtime_fixture_dir/noisy.stderr ]]; then
   printf '%s\n' 'runtime test leaked bounded probe diagnostics' >&2
   exit 1

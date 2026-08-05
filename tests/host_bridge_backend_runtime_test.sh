@@ -10,9 +10,11 @@
 # Parameters: --bwrap and --proot accept absolute executable paths for fixtures;
 # --timeout accepts 1-60 seconds; --architecture accepts x86_64/amd64 or
 # aarch64/arm64; --runtime-kind accepts docker, sif, direct, or unknown.
-# Reasons are bounded to missing, invalid-version, timeout, operation-failed, and
-# operational. Version captures have a small file-size limit; operation output is
-# discarded, and backend stdout/stderr are never reported.
+# Reasons are bounded to missing, invalid-version, timeout,
+# policy-or-runtime-denied, and operational. `installed` proves only that the
+# resolved path is executable, while `version_valid` proves its required
+# version output. Version captures have a small file-size limit; operation
+# output is discarded, and backend stdout/stderr are never reported.
 #
 # Side effects: creates a mode-0700 temporary directory under ${TMPDIR:-/tmp} for
 # bounded command captures, then removes it on exit. It reads no live state or
@@ -110,57 +112,96 @@ trap 'rm -rf -- "$tempdir"' EXIT
 run_captured_bounded() {
   local stdout_path=$1
   local stderr_path=$2
-  shift 2
+  local completion_path=$3
+  shift 3
 
+  rm -f -- "$completion_path"
   if {
     (
       ulimit -f 16
-      timeout --kill-after=1 "$timeout_seconds" "$@"
+      # shellcheck disable=SC2016
+      timeout --kill-after=1 "$timeout_seconds" bash -c '
+        set +e
+        completion_path=$1
+        shift
+        "$@"
+        status=$?
+        printf "%s\n" "$status" > "$completion_path"
+        exit "$status"
+      ' bash "$completion_path" "$@"
     ) > "$stdout_path" 2> "$stderr_path"
   } 2> /dev/null; then
     run_status=0
   else
     run_status=$?
   fi
+  run_timed_out=true
+  if [[ -f $completion_path ]]; then
+    run_status=$(<"$completion_path")
+    run_timed_out=false
+  fi
 }
 
 run_discarded_bounded() {
-  if timeout --kill-after=1 "$timeout_seconds" "$@" > /dev/null 2>&1; then
+  local completion_path=$1
+  shift
+
+  rm -f -- "$completion_path"
+  # shellcheck disable=SC2016
+  if timeout --kill-after=1 "$timeout_seconds" bash -c '
+    set +e
+    completion_path=$1
+    shift
+    "$@"
+    status=$?
+    printf "%s\n" "$status" > "$completion_path"
+    exit "$status"
+  ' bash "$completion_path" "$@" > /dev/null 2>&1; then
     run_status=0
   else
     run_status=$?
   fi
+  run_timed_out=true
+  if [[ -f $completion_path ]]; then
+    run_status=$(<"$completion_path")
+    run_timed_out=false
+  fi
 }
 
 status_reason() {
-  case $1 in
-    124|137) printf '%s\n' timeout ;;
-    *) printf '%s\n' operation-failed ;;
-  esac
+  if [[ $run_timed_out == true ]]; then
+    printf '%s\n' timeout
+  else
+    printf '%s\n' policy-or-runtime-denied
+  fi
 }
 
 bwrap_installed=false
+bwrap_version_valid=false
 bwrap_operational=false
 bwrap_reason=missing
 proot_installed=false
+proot_version_valid=false
 proot_operational=false
 proot_reason=missing
 
 if [[ -n $bwrap_path && -x $bwrap_path ]]; then
+  bwrap_installed=true
   run_captured_bounded "$tempdir/bwrap-version.stdout" "$tempdir/bwrap-version.stderr" \
+    "$tempdir/bwrap-version.status" \
     "$bwrap_path" --version
   bwrap_version=$(<"$tempdir/bwrap-version.stdout")
   if (( run_status == 0 )) && [[ $bwrap_version =~ ^bubblewrap[[:space:]][0-9]+(\.[0-9]+){1,2}$ ]]; then
-    bwrap_installed=true
-    run_discarded_bounded "$bwrap_path" \
+    bwrap_version_valid=true
+    run_discarded_bounded "$tempdir/bwrap-operation.status" "$bwrap_path" \
       --unshare-user --uid 0 --gid 0 --ro-bind / / --dev /dev --proc /proc -- /bin/true
     if (( run_status == 0 )); then
       bwrap_operational=true
       bwrap_reason=operational
     else
-      bwrap_reason=$(status_reason "$run_status")
+      bwrap_reason=$(status_reason)
     fi
-  elif (( run_status == 124 || run_status == 137 )); then
+  elif [[ $run_timed_out == true ]]; then
     bwrap_reason=timeout
   else
     bwrap_reason=invalid-version
@@ -168,19 +209,21 @@ if [[ -n $bwrap_path && -x $bwrap_path ]]; then
 fi
 
 if [[ -n $proot_path && -x $proot_path ]]; then
+  proot_installed=true
   run_captured_bounded "$tempdir/proot-version.stdout" "$tempdir/proot-version.stderr" \
+    "$tempdir/proot-version.status" \
     "$proot_path" --version
   if (( run_status == 0 )) \
     && grep -Eq ' v5\.4\.0(-bd5a5f63)?$' "$tempdir/proot-version.stdout"; then
-    proot_installed=true
-    run_discarded_bounded "$proot_path" -r / /bin/true
+    proot_version_valid=true
+    run_discarded_bounded "$tempdir/proot-operation.status" "$proot_path" -r / /bin/true
     if (( run_status == 0 )); then
       proot_operational=true
       proot_reason=operational
     else
-      proot_reason=$(status_reason "$run_status")
+      proot_reason=$(status_reason)
     fi
-  elif (( run_status == 124 || run_status == 137 )); then
+  elif [[ $run_timed_out == true ]]; then
     proot_reason=timeout
   else
     proot_reason=invalid-version
@@ -188,21 +231,20 @@ if [[ -n $proot_path && -x $proot_path ]]; then
 fi
 
 python3 - "$architecture" "$runtime_kind" \
-  "$bwrap_installed" "$bwrap_operational" "$bwrap_reason" \
-  "$proot_installed" "$proot_operational" "$proot_reason" <<'PY'
+  "$bwrap_installed" "$bwrap_version_valid" "$bwrap_operational" "$bwrap_reason" \
+  "$proot_installed" "$proot_version_valid" "$proot_operational" "$proot_reason" <<'PY'
 import json
 import sys
 
 architecture, runtime_kind, *values = sys.argv[1:]
 
 def backend(offset):
-    installed, operational, reason = values[offset:offset + 3]
-    installed = installed == "true"
+    installed, version_valid, operational, reason = values[offset:offset + 4]
     return {
-        "installed": installed,
+        "installed": installed == "true",
         "operational": operational == "true",
         "reason": reason,
-        "version_valid": installed,
+        "version_valid": version_valid == "true",
     }
 
 print(json.dumps({
@@ -211,7 +253,7 @@ print(json.dumps({
     "runtime_kind": runtime_kind,
     "backends": {
         "bubblewrap": backend(0),
-        "proot": backend(3),
+        "proot": backend(4),
     },
 }, separators=(",", ":")))
 PY
