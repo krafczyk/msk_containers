@@ -270,11 +270,13 @@ normalized_architecture_script() {
       content=${content//linux\/x86_64/linux\/CONTAINER_ARCH}
       content=${content//\/x86\//\/CONTAINER_ARCH\/}
       content=${content//nvim_container_x86/nvim_container_ARCH}
+      content=${content//configure_docker_build_storage x86_64/configure_docker_build_storage CONTAINER_ARCH}
       ;;
     aarch64)
       content=${content//linux\/arm64/linux\/CONTAINER_ARCH}
       content=${content//\/aarch64\//\/CONTAINER_ARCH\/}
       content=${content//nvim_container_aarch64/nvim_container_ARCH}
+      content=${content//configure_docker_build_storage aarch64/configure_docker_build_storage CONTAINER_ARCH}
       ;;
     *)
       printf 'unsupported container architecture: %s\n' "$architecture" >&2
@@ -302,40 +304,215 @@ assert_architecture_script_parity() {
 
 assert_orchestration_invocations() {
   local architecture=$1
-  local build_script=$2
-  local platform=$3
-  local image=$4
-  local dockerfile=$5
-  local export_tar=$6
-  local definition=$7
-  local sif=$8
+  local platform cache_architecture build_context
+  case $architecture in
+    x86)
+      platform=linux/x86_64
+      cache_architecture=x86_64
+      build_context=$repo/nvim
+      ;;
+    aarch64)
+      platform=linux/arm64
+      cache_architecture=aarch64
+      build_context=$repo/nvim
+      ;;
+    ppc64le)
+      platform=linux/ppc64le
+      cache_architecture=ppc64le
+      build_context=$repo/nvim/ppc64le
+      ;;
+    *)
+      printf 'unsupported orchestration architecture: %s\n' "$architecture" >&2
+      exit 1
+      ;;
+  esac
+  local image="nvim_container_$architecture"
+  local build_script="$repo/nvim/$architecture/${image}_build.sh"
+  local dockerfile="$repo/nvim/$architecture/${image}.dockerfile"
+  local export_tar="${image}.tar"
+  local definition="${image}.def"
+  local sif="${image}.sif"
   local fake_bin="$test_tmpdir/$architecture/bin"
   local command_log="$test_tmpdir/$architecture/commands"
+  local home="$test_tmpdir/$architecture/home"
+  local config="$home/.config/ct_runtime.conf"
+  local storage="$test_tmpdir/$architecture/runtime storage"
+  local singularity_cache="$storage/singularity cache"
+  local singularity_tmp="$storage/singularity tmp"
+  local docker_cache="$storage/docker cache"
+  local docker_tmp="$storage/docker tmp"
+  local architecture_cache="$docker_cache/$cache_architecture"
+  local current_cache="$architecture_cache/current"
   local expected
 
-  mkdir -p "$fake_bin"
+  mkdir -p "$fake_bin" "$home/.config"
+  printf '%s\n' \
+    "CT_SINGULARITY_CACHE_DIR=$singularity_cache" \
+    "CT_SINGULARITY_TMP_DIR=$singularity_tmp" \
+    "CT_DOCKER_BUILD_CACHE_DIR=$docker_cache" \
+    "CT_DOCKER_BUILD_TMP_DIR=$docker_tmp" > "$config"
+  chmod 600 "$config"
   for command in docker singularity apptainer; do
     printf '%s\n' \
       '#!/usr/bin/env bash' \
-      'printf "%s" "${0##*/}" >> "$NVIM_CONTAINER_COMMAND_LOG"' \
-      'printf " <%s>" "$@" >> "$NVIM_CONTAINER_COMMAND_LOG"' \
+      'command=${0##*/}' \
+      'printf "%s" "$command" >> "$NVIM_CONTAINER_COMMAND_LOG"' \
+      'case "$command:${1:-}" in' \
+      '  docker:buildx) printf " <TMPDIR=%s>" "${TMPDIR:-}" >> "$NVIM_CONTAINER_COMMAND_LOG" ;;' \
+      '  singularity:*|apptainer:*) printf " <CACHE=%s> <TMP=%s>" "${SINGULARITY_CACHEDIR:-${APPTAINER_CACHEDIR:-}}" "${SINGULARITY_TMPDIR:-${APPTAINER_TMPDIR:-}}" >> "$NVIM_CONTAINER_COMMAND_LOG" ;;' \
+      'esac' \
+      'for argument in "$@"; do' \
+      '  display=$argument' \
+      '  if [[ $argument == "type=local,dest=$NVIM_CONTAINER_CACHE_NAMESPACE"/.next.*,mode=max ]]; then' \
+      '    cache_directory=${argument#type=local,dest=}' \
+      '    cache_directory=${cache_directory%,mode=max}' \
+      '    mkdir -p "$cache_directory"' \
+      '    : > "$cache_directory/index.json"' \
+      '    : > "$cache_directory/generation-$NVIM_CONTAINER_BUILD_ITERATION"' \
+      '    display=type=local,dest=CACHE_STAGING,mode=max' \
+      '  fi' \
+      '  printf " <%s>" "$display" >> "$NVIM_CONTAINER_COMMAND_LOG"' \
+      'done' \
       'printf "\n" >> "$NVIM_CONTAINER_COMMAND_LOG"' > "$fake_bin/$command"
     chmod +x "$fake_bin/$command"
   done
 
-  (
-    cd "$repo/nvim/$architecture"
-    NVIM_CONTAINER_COMMAND_LOG=$command_log PATH="$fake_bin:$PATH" bash "$build_script"
-  )
+  local iteration
+  for iteration in 1 2; do
+    (
+      cd "$repo/nvim/$architecture"
+      HOME=$home CT_RUNTIME_CFG=$config TMPDIR='' \
+        NVIM_CONTAINER_BUILD_ITERATION=$iteration \
+        NVIM_CONTAINER_CACHE_NAMESPACE=$architecture_cache \
+        NVIM_CONTAINER_COMMAND_LOG=$command_log PATH="$fake_bin:$PATH" \
+        bash "$build_script"
+    )
+  done
 
   expected=$(printf '%s\n' \
-    "docker <buildx> <build> <--platform> <$platform> <-f> <$dockerfile> <-t> <$image:latest> <--load> <$repo/nvim>" \
+    "docker <TMPDIR=$docker_tmp> <buildx> <build> <--platform> <$platform> <-f> <$dockerfile> <-t> <$image:latest> <--cache-to> <type=local,dest=CACHE_STAGING,mode=max> <--load> <$build_context>" \
     "docker <save> <$image:latest> <-o> <$export_tar>" \
-    "singularity <build> <--force> <--fakeroot> <$sif> <$definition>")
+    "singularity <CACHE=$singularity_cache> <TMP=$singularity_tmp> <build> <--force> <--fakeroot> <$sif> <$definition>" \
+    "docker <TMPDIR=$docker_tmp> <buildx> <build> <--platform> <$platform> <-f> <$dockerfile> <-t> <$image:latest> <--cache-from> <type=local,src=$current_cache> <--cache-to> <type=local,dest=CACHE_STAGING,mode=max> <--load> <$build_context>" \
+    "docker <save> <$image:latest> <-o> <$export_tar>" \
+    "singularity <CACHE=$singularity_cache> <TMP=$singularity_tmp> <build> <--force> <--fakeroot> <$sif> <$definition>")
   if ! diff -u <(printf '%s\n' "$expected") "$command_log"; then
     printf 'unexpected %s orchestration command sequence\n' "$architecture" >&2
     exit 1
   fi
+
+  for directory in "$singularity_cache" "$singularity_tmp" "$docker_cache" "$docker_tmp" "$architecture_cache" "$current_cache"; do
+    if [[ ! -d $directory || $(stat -Lc '%a' -- "$directory") != 700 ]]; then
+      printf 'runtime storage directory is not private: %s\n' "$directory" >&2
+      exit 1
+    fi
+  done
+  [[ -f $current_cache/generation-2 && ! -e $current_cache/generation-1 ]]
+  shopt -s nullglob
+  local stale_generations=("$architecture_cache"/.next.*)
+  shopt -u nullglob
+  if (( ${#stale_generations[@]} != 0 )) || [[ -e $architecture_cache/.previous || -L $architecture_cache/.previous ]]; then
+    printf 'stale Docker cache generations remain for %s\n' "$architecture" >&2
+    exit 1
+  fi
+}
+
+assert_alternate_runtime_selection() {
+  local fake_bin="$test_tmpdir/alternate-runtime/bin"
+  local home="$test_tmpdir/alternate-runtime/home"
+  local config="$home/.config/ct_runtime.conf"
+  local command_log="$test_tmpdir/alternate-runtime/commands"
+  local cache="$test_tmpdir/alternate-runtime/cache"
+  local tmp="$test_tmpdir/alternate-runtime/tmp"
+  local utility
+  mkdir -p "$fake_bin" "$home/.config"
+  for utility in bash cat chmod dirname install realpath stat timeout; do
+    ln -s "$(command -v "$utility")" "$fake_bin/$utility"
+  done
+  printf '%s\n' \
+    "CT_SINGULARITY_CACHE_DIR=$cache" \
+    "CT_SINGULARITY_TMP_DIR=$tmp" > "$config"
+  chmod 600 "$config"
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'printf "apptainer <%s> <%s>" "$APPTAINER_CACHEDIR" "$APPTAINER_TMPDIR" > "$NVIM_CONTAINER_COMMAND_LOG"' \
+    'printf " <%s>" "$@" >> "$NVIM_CONTAINER_COMMAND_LOG"' \
+    'printf "\n" >> "$NVIM_CONTAINER_COMMAND_LOG"' > "$fake_bin/apptainer"
+  chmod +x "$fake_bin/apptainer"
+
+  (
+    cd "$repo/nvim/x86"
+    HOME=$home CT_RUNTIME_CFG=$config NVIM_CONTAINER_COMMAND_LOG=$command_log \
+      PATH=$fake_bin /bin/bash ./nvim_container_x86_build_singularity.sh
+  )
+  expected="apptainer <$cache> <$tmp> <build> <--force> <--fakeroot> <nvim_container_x86.sif> <nvim_container_x86.def>"
+  [[ $(<"$command_log") == "$expected" ]] || {
+    printf '%s\n' 'Apptainer fallback did not receive configured runtime storage' >&2
+    exit 1
+  }
+
+  rm "$fake_bin/apptainer"
+  if missing_output=$(
+    cd "$repo/nvim/x86"
+    HOME=$home CT_RUNTIME_CFG=$config PATH=$fake_bin \
+      /bin/bash ./nvim_container_x86_build_singularity.sh 2>&1
+  ); then
+    printf '%s\n' 'Singularity build accepted a host with no supported runtime' >&2
+    exit 1
+  fi
+  [[ $missing_output == *'Neither Singularity nor Apptainer are installed'* ]] || {
+    printf '%s\n' 'missing-runtime failure did not explain the prerequisite' >&2
+    exit 1
+  }
+}
+
+assert_failed_build_discards_cache() {
+  local fake_bin="$test_tmpdir/failed-build/bin"
+  local home="$test_tmpdir/failed-build/home"
+  local config="$home/.config/ct_runtime.conf"
+  local cache="$test_tmpdir/failed-build/cache"
+  local namespace="$cache/x86_64"
+  mkdir -p "$fake_bin" "$home/.config"
+  printf 'CT_DOCKER_BUILD_CACHE_DIR=%s\n' "$cache" > "$config"
+  chmod 600 "$config"
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'for argument in "$@"; do' \
+    '  if [[ $argument == type=local,dest=*,mode=max ]]; then' \
+    '    cache_directory=${argument#type=local,dest=}' \
+    '    cache_directory=${cache_directory%,mode=max}' \
+    '    mkdir -p "$cache_directory"' \
+    '    : > "$cache_directory/partial"' \
+    '  fi' \
+    'done' \
+    'exit 42' > "$fake_bin/docker"
+  chmod +x "$fake_bin/docker"
+
+  if HOME=$home CT_RUNTIME_CFG=$config TMPDIR=/tmp PATH="$fake_bin:$PATH" \
+    bash "$repo/nvim/x86/nvim_container_x86_build_docker.sh"; then
+    printf '%s\n' 'failed Docker build returned success' >&2
+    exit 1
+  else
+    local status=$?
+  fi
+  [[ $status == 42 && ! -e $namespace/current && ! -L $namespace/current ]] || {
+    printf '%s\n' 'failed Docker build retained or promoted an incomplete cache' >&2
+    exit 1
+  }
+  shopt -s nullglob
+  local incomplete=("$namespace"/.next.*)
+  shopt -u nullglob
+  (( ${#incomplete[@]} == 0 )) || {
+    printf '%s\n' 'failed Docker build left a staging cache behind' >&2
+    exit 1
+  }
+  (
+    exec 8> "$namespace/.lock"
+    flock -n 8
+  ) || {
+    printf '%s\n' 'failed Docker build did not release its cache lock' >&2
+    exit 1
+  }
 }
 
 for arch in x86 aarch64 ppc64le; do
@@ -496,14 +673,11 @@ assert_architecture_script_parity 'Docker build scripts' "$x86_docker_build" "$a
 assert_architecture_script_parity 'Docker export scripts' "$x86_docker_export" "$arm_docker_export"
 assert_architecture_script_parity 'top-level build scripts' "$x86_build" "$arm_build"
 assert_architecture_script_parity 'Singularity/Apptainer build scripts' "$x86_singularity_build" "$arm_singularity_build"
-assert_orchestration_invocations \
-  x86 "$x86_build" linux/x86_64 nvim_container_x86 \
-  "$repo/nvim/x86/nvim_container_x86.dockerfile" nvim_container_x86.tar \
-  nvim_container_x86.def nvim_container_x86.sif
-assert_orchestration_invocations \
-  aarch64 "$arm_build" linux/arm64 nvim_container_aarch64 \
-  "$repo/nvim/aarch64/nvim_container_aarch64.dockerfile" nvim_container_aarch64.tar \
-  nvim_container_aarch64.def nvim_container_aarch64.sif
+assert_orchestration_invocations x86
+assert_orchestration_invocations aarch64
+assert_orchestration_invocations ppc64le
+assert_alternate_runtime_selection
+assert_failed_build_discards_cache
 
 assert_same_arguments 'dnf install -y ' 'direct DNF package'
 assert_same_arguments 'pip3 install --prefix /usr ' 'direct pip package'
@@ -511,7 +685,8 @@ assert_same_arguments 'npm install -g basedpyright ' 'global npm package'
 assert_same_arguments 'npm install --prefix /opt/msk/browser-tools --save-exact ' 'browser npm package'
 
 for dockerfile in "$x86" "$arm"; do
-  assert_active "$dockerfile" 'FROM quay.io/fedora/fedora:43@sha256:0d6ac603766d9b7021c2a607db42628584215316a7742da722674f3c5c653232'
+  assert_active "$dockerfile" 'FROM docker.io/library/fedora:43@sha256:762d73ba1c455232b0272c5d445a34f36c4b9f421cbc05ce8102552325b6a222'
+  assert_not_contains "$dockerfile" 'quay.io/fedora/fedora'
   assert_active "$dockerfile" 'ENV NODE_VER=24.18.0'
   assert_active "$dockerfile" 'ARG STYLUA_VERSION=2.5.2'
   assert_active "$dockerfile" 'ARG LUACHECK_VERSION=1.2.0-1'
@@ -654,6 +829,14 @@ done
 
 assert_contains "$adr" '| `ffmpeg-free` | All |'
 assert_contains "$adr" '| `ShellCheck` | All |'
+assert_contains "$adr" '`docker.io/library/fedora:43@sha256:762d73ba1c455232b0272c5d445a34f36c4b9f421cbc05ce8102552325b6a222`'
+assert_contains "$adr" 'Docker Official Image'
+assert_contains "$adr" 'retention assumption'
+assert_contains "$adr" 'not a contractual retention guarantee'
+assert_contains "$adr" '`tests/fedora_base_availability_test.py`'
+assert_contains "$adr" '`tests/fedora_base_availability_unit_test.py`'
+assert_contains "$adr" 'checks every referenced config and'
+assert_contains "$adr" 'layer blob without following registry redirects'
 assert_contains "$adr" '| `shfmt` | x86, ARM | Fedora 43 package/update stream |'
 assert_contains "$adr" '| `uv` | x86, ARM | Fedora 43 package/update stream |'
 assert_contains "$adr" 'not immutable'

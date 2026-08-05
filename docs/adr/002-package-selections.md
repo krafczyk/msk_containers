@@ -44,9 +44,42 @@ The architecture markers used below are:
 
 | Architecture | Base selection | Reason |
 | --- | --- | --- |
-| x86_64 | Fedora 43 multi-architecture image, pinned by digest | Provides a repeatable development baseline and current development packages. |
-| aarch64 | Fedora 43 multi-architecture image, pinned by digest | Uses the same release and image index as x86_64 so package selections remain aligned. |
+| x86_64 | Docker Official Fedora 43 image index, `docker.io/library/fedora:43@sha256:762d73ba1c455232b0272c5d445a34f36c4b9f421cbc05ce8102552325b6a222` | Provides a repeatable development baseline and current development packages from the Docker Official Image program. |
+| aarch64 | The same Docker Official Fedora 43 image index and digest | Uses the same release and image index as x86_64 so package selections remain aligned. |
 | ppc64le | Fedora Rawhide | Provides package availability for the less common Power architecture, but currently follows a floating base. |
+
+The maintained x86_64 and aarch64 images use the Docker Official Image instead
+of the Fedora image hosted at `quay.io/fedora/fedora`. Quay garbage-collected
+older Fedora 43 indexes or child manifests shortly after its rolling tag moved,
+making otherwise immutable pins unavailable and breaking historical builds. The
+Docker Official reference retains the release tag for human context while the
+index digest fixes the selected content and its platform manifests.
+
+The retention assumption is that Docker Official Image indexes, child
+manifests, and blobs remain content-addressable after a rolling tag advances.
+As of 2026-08-05, the current selection and sampled older Fedora indexes from
+December 2025, February 2026, and April 2026 remained resolvable from Docker
+Hub. That operational history is materially stronger than the observed Quay
+behavior, but it is not a contractual retention guarantee. The credential-free
+`tests/fedora_base_availability_test.py` check resolves the pin through the
+Docker Registry API, verifies its digest, requires Linux amd64 and arm64 index
+entries, fetches both child manifests, and checks every referenced config and
+layer blob without following registry redirects. A failed check blocks a repin
+or release investigation; silently replacing the digest does not.
+
+To update the base selection:
+
+1. Inspect `docker.io/library/fedora:43` with
+   `docker buildx imagetools inspect docker.io/library/fedora:43` and confirm
+   that the reviewed index contains Linux amd64 and arm64 images.
+2. Replace the index digest in both maintained Dockerfiles in the same change.
+   Keep the references identical and retain the `fedora:43` release context.
+3. Update this table, then run `bash tests/nvim_container_tooling_test.sh` and
+   `python3 tests/fedora_base_availability_unit_test.py`, followed by the live
+   `python3 tests/fedora_base_availability_test.py` check.
+4. Complete one x86_64 and one aarch64 build from the new pin before release.
+   Use the architecture build scripts so configured Buildx cache and temporary
+   storage are exercised.
 
 The operating-system entries below are direct DNF install operands. Most are
 Fedora package names, but DNF may satisfy an executable capability such as
@@ -432,6 +465,10 @@ revision.
 - `nvim/aarch64/nvim_container_aarch64.def`
 - `nvim/ppc64le/nvim_container_ppc64le.def`
 - `nvim/bin/mkchad`
+- `tests/fedora_base_availability_test.py`
+- `tests/fedora_base_availability_unit_test.py`
+- [Docker Official Fedora image](https://hub.docker.com/_/fedora)
+- [Docker Official Images Fedora manifest](https://github.com/docker-library/official-images/blob/master/library/fedora)
 - [StyLua 2.5.2](https://github.com/JohnnyMorganz/StyLua/releases/tag/v2.5.2)
 - [Luacheck 1.2.0-1 rockspec](https://luarocks.org/luacheck-1.2.0-1.rockspec)
 - [Fedora LuaRocks package](https://packages.fedoraproject.org/pkgs/luarocks/luarocks/)
