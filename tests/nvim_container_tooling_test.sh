@@ -162,6 +162,30 @@ assert_contains_once() {
   fi
 }
 
+assert_only_proot_make_target() {
+  local file=$1
+  local line
+  local trimmed
+  local count=0
+
+  while IFS= read -r line || [[ -n $line ]]; do
+    trimmed=${line#"${line%%[![:space:]]*}"}
+    [[ $trimmed == \#* ]] && continue
+    line=${line%%[[:space:]]#*}
+    [[ $line == *'make -C /tmp/proot/src '* ]] || continue
+    ((count += 1))
+    if [[ $line != *'make -C /tmp/proot/src proot;'* ]]; then
+      printf 'unexpected PRoot make target in %s: %s\n' "$file" "$line" >&2
+      exit 1
+    fi
+  done < "$file"
+
+  if (( count != 1 )); then
+    printf '%s must invoke exactly one PRoot make target\n' "$file" >&2
+    exit 1
+  fi
+}
+
 normalized_dockerfile() {
   local file=$1
   local luals_build=$2
@@ -308,6 +332,7 @@ x86_build="$repo/nvim/x86/nvim_container_x86_build.sh"
 arm_build="$repo/nvim/aarch64/nvim_container_aarch64_build.sh"
 x86_singularity_build="$repo/nvim/x86/nvim_container_x86_build_singularity.sh"
 arm_singularity_build="$repo/nvim/aarch64/nvim_container_aarch64_build_singularity.sh"
+runtime_test="$repo/tests/host_bridge_backend_runtime_test.sh"
 
 python3 - "$manifest" "$x86" "$arm" <<'PY'
 import json
@@ -508,6 +533,44 @@ for dockerfile in "$x86" "$arm"; do
   assert_active "$dockerfile" 'opencode --version'
   assert_active "$dockerfile" 'agent-browser --version'
   assert_not_contains "$dockerfile" 'agent-browser install'
+  for package in \
+    bubblewrap libtalloc-devel pkgconf-pkg-config musl-gcc musl-devel musl-libc-static; do
+    assert_active "$dockerfile" "$package"
+  done
+  assert_active "$dockerfile" 'ARG PROOT_VERSION=v5.4.0'
+  assert_active "$dockerfile" 'ARG PROOT_REVISION=bd5a5f63d72f8210d8cee76195eb9f0749e5bd70'
+  assert_active "$dockerfile" 'ARG PROOT_UTHASH_REVISION=e493aa90a2833b4655927598f169c31cfcdf7861'
+  assert_active "$dockerfile" 'git clone --depth 1 --single-branch --branch "${PROOT_VERSION}"'
+  assert_contains_once "$dockerfile" 'git clone --depth 1 --single-branch --branch "${PROOT_VERSION}"' 'PRoot release checkout'
+  assert_active "$dockerfile" 'https://github.com/proot-me/proot.git /tmp/proot'
+  assert_active "$dockerfile" 'git -C /tmp/proot checkout --detach "${PROOT_REVISION}"'
+  assert_active "$dockerfile" 'test "$(git -C /tmp/proot rev-parse HEAD)" = "${PROOT_REVISION}"'
+  assert_active "$dockerfile" "test \"\$(git -C /tmp/proot ls-tree HEAD lib/uthash | awk '{print \$3}')\" = \"\${PROOT_UTHASH_REVISION}\""
+  assert_active "$dockerfile" 'git -C /tmp/proot submodule update --init lib/uthash'
+  assert_not_contains "$dockerfile" 'git -C /tmp/proot submodule update --init --recursive'
+  assert_active "$dockerfile" 'test "$(git -C /tmp/proot/lib/uthash rev-parse HEAD)" = "${PROOT_UTHASH_REVISION}"'
+  assert_active "$dockerfile" 'make -C /tmp/proot/src proot'
+  assert_only_proot_make_target "$dockerfile"
+  assert_not_contains "$dockerfile" 'make -C /tmp/proot/src care'
+  assert_not_contains "$dockerfile" 'make -C /tmp/proot/src qemu'
+  assert_not_contains_case_insensitive "$dockerfile" 'care'
+  assert_not_contains_case_insensitive "$dockerfile" 'qemu'
+  assert_active "$dockerfile" 'install -D -m 0755 /tmp/proot/src/proot /opt/msk/proot/bin/proot'
+  assert_active "$dockerfile" 'install -D -m 0644 /tmp/proot/COPYING /opt/msk/proot/licenses/proot/COPYING'
+  assert_active "$dockerfile" 'install -D -m 0644 /tmp/proot/lib/uthash/LICENSE /opt/msk/proot/licenses/uthash/LICENSE'
+  assert_active "$dockerfile" 'ln -s /opt/msk/proot/bin/proot /usr/bin/proot'
+  assert_active "$dockerfile" 'rm -rf /tmp/proot'
+  assert_active "$dockerfile" 'bwrap --version'
+  assert_active "$dockerfile" 'test -x /opt/msk/proot/bin/proot'
+  assert_active "$dockerfile" 'test -L /usr/bin/proot'
+  assert_active "$dockerfile" 'test "$(readlink /usr/bin/proot)" = /opt/msk/proot/bin/proot'
+  assert_active "$dockerfile" 'test -f /opt/msk/proot/licenses/proot/COPYING'
+  assert_active "$dockerfile" 'test -f /opt/msk/proot/licenses/uthash/LICENSE'
+  assert_active "$dockerfile" 'proot --version | grep -Eq " ${PROOT_VERSION}(-[0-9a-f]{8})?$"'
+  assert_active "$dockerfile" 'musl-gcc -std=c11 -static'
+  assert_active "$dockerfile" "! grep -Fq ' INTERP '"
+  assert_active "$dockerfile" '"${smoke_dir}/hello"'
+  assert_active "$dockerfile" 'rm -rf "${smoke_dir}"'
 done
 
 assert_active "$arm" 'git submodule update --init --recursive'
@@ -520,6 +583,9 @@ assert_not_contains "$repo/nvim/ppc64le/nvim_container_ppc64le.dockerfile" 'OPEN
 assert_not_contains "$repo/nvim/ppc64le/nvim_container_ppc64le.dockerfile" 'OPENCODE_REVISION'
 assert_not_contains "$repo/nvim/ppc64le/nvim_container_ppc64le.dockerfile" 'OPENCODE_RELEASE_BASE'
 assert_not_contains_case_insensitive "$repo/nvim/ppc64le/nvim_container_ppc64le.dockerfile" 'opencode'
+for excluded in bubblewrap proot uthash musl-gcc musl-devel musl-libc-static; do
+  assert_not_contains_case_insensitive "$repo/nvim/ppc64le/nvim_container_ppc64le.dockerfile" "$excluded"
+done
 
 assert_contains "$adr" '| `ffmpeg-free` | All |'
 assert_contains "$adr" '| `ShellCheck` | All |'
@@ -547,5 +613,181 @@ assert_contains "$adr" '`a27ffb63a8310375836e0d6f668ae17fa8d8d18b88c37c821c65331
 assert_contains "$adr" 'source authoring and testing'
 assert_contains "$adr" 'not required for normal OpenCode runtime'
 assert_contains "$adr" 'Keep the x86_64 and aarch64 images at functional parity'
+assert_contains "$adr" '| `bubblewrap` | x86, ARM | Fedora 43 package/update stream |'
+assert_contains "$adr" '| `libtalloc-devel` | x86, ARM | Fedora 43 package/update stream |'
+assert_contains "$adr" '| `pkgconf-pkg-config` | x86, ARM | Fedora 43 package/update stream |'
+assert_contains "$adr" '| `musl-gcc` | x86, ARM | Fedora 43 package/update stream |'
+assert_contains "$adr" '| `musl-devel` | x86, ARM | Fedora 43 package/update stream |'
+assert_contains "$adr" '| `musl-libc-static` | x86, ARM | Fedora 43 package/update stream |'
+assert_contains "$adr" 'Release `v5.4.0`, root commit `bd5a5f63d72f8210d8cee76195eb9f0749e5bd70`'
+assert_contains "$adr" 'checked-out submodule commit `e493aa90a2833b4655927598f169c31cfcdf7861`'
+assert_contains "$adr" 'PPC64LE is explicitly excluded'
+assert_contains "$adr" 'CARE, QEMU, and other PRoot utilities'
+assert_contains "$adr" 'are not built or installed.'
+assert_contains "$adr" 'installs the executable under `/opt/msk/proot`, and exposes'
+assert_contains "$adr" 'it through `/usr/bin/proot`'
+assert_contains "$adr" 'The isolated prefix retains the applicable upstream'
+assert_contains "$adr" 'PRoot and `lib/uthash` license material.'
+
+make_bwrap_fixture() {
+  local path=$1
+
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'set -euo pipefail' \
+    'if [[ ${1:-} == --version ]]; then printf "%s\\n" "${HB_BWRAP_VERSION}"; exit 0; fi' \
+    'printf "%s\\n" "$*" >> "${HB_FIXTURE_LOG}"' \
+    '[[ $* == "--unshare-user --uid 0 --gid 0 --ro-bind / / --dev /dev --proc /proc -- /bin/true" ]]' \
+    'sleep "${HB_BWRAP_DELAY:-0}"' \
+    'exit "${HB_BWRAP_STATUS:-0}"' > "$path"
+  chmod +x "$path"
+}
+
+make_proot_fixture() {
+  local path=$1
+
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'set -euo pipefail' \
+    'if [[ ${1:-} == --version ]]; then printf "%s\\n" "${HB_PROOT_VERSION}"; exit 0; fi' \
+    'printf "%s\\n" "$*" >> "${HB_FIXTURE_LOG}"' \
+    '[[ $* == "-r / /bin/true" ]]' \
+    'sleep "${HB_PROOT_DELAY:-0}"' \
+    'exit "${HB_PROOT_STATUS:-0}"' > "$path"
+  chmod +x "$path"
+}
+
+assert_runtime_json() {
+  local output=$1
+  local architecture=$2
+  local runtime_kind=$3
+  local bwrap_installed=$4
+  local bwrap_operational=$5
+  local bwrap_reason=$6
+  local proot_installed=$7
+  local proot_operational=$8
+  local proot_reason=$9
+
+  python3 - "$output" "$architecture" "$runtime_kind" \
+    "$bwrap_installed" "$bwrap_operational" "$bwrap_reason" \
+    "$proot_installed" "$proot_operational" "$proot_reason" <<'PY'
+import json
+import sys
+
+result = json.loads(sys.argv[1])
+assert result["schema"] == "mkchad.host-bridge-backend-runtime/v1"
+assert result["architecture"] == sys.argv[2]
+assert result["runtime_kind"] == sys.argv[3]
+for name, installed, operational, reason in (
+    ("bubblewrap", sys.argv[4] == "true", sys.argv[5] == "true", sys.argv[6]),
+    ("proot", sys.argv[7] == "true", sys.argv[8] == "true", sys.argv[9]),
+):
+    backend = result["backends"][name]
+    assert backend["installed"] is installed
+    assert backend["operational"] is operational
+    assert backend["reason"] == reason
+    assert backend["version_valid"] is installed
+PY
+}
+
+runtime_fixture_dir="$test_tmpdir/host-bridge-runtime"
+mkdir -p "$runtime_fixture_dir"
+bwrap_fixture="$runtime_fixture_dir/bwrap"
+proot_fixture="$runtime_fixture_dir/proot"
+fixture_log="$runtime_fixture_dir/commands"
+make_bwrap_fixture "$bwrap_fixture"
+make_proot_fixture "$proot_fixture"
+proot_version_release=$' _____ _____              ___\n|__|  |__|__\\_____/\\_____/\\____| v5.4.0\n\nbuilt-in accelerators: process_vm = yes, seccomp_filter = yes'
+proot_version_pinned=$' _____ _____              ___\n|__|  |__|__\\_____/\\_____/\\____| v5.4.0-bd5a5f63\n\nbuilt-in accelerators: process_vm = yes, seccomp_filter = yes'
+case $(uname -m) in
+  x86_64|amd64) default_runtime_architecture=x86_64 ;;
+  aarch64|arm64) default_runtime_architecture=aarch64 ;;
+  *) default_runtime_architecture=unknown ;;
+esac
+
+runtime_output=$(HB_FIXTURE_LOG=$fixture_log \
+  HB_BWRAP_VERSION='bubblewrap 0.11.0' HB_PROOT_VERSION="$proot_version_pinned" \
+  "$runtime_test" --bwrap "$bwrap_fixture" --proot "$proot_fixture" \
+  --timeout 2 --architecture x86_64 --runtime-kind docker)
+assert_runtime_json "$runtime_output" x86_64 docker true true operational true true operational
+assert_contains "$fixture_log" '--unshare-user --uid 0 --gid 0 --ro-bind / / --dev /dev --proc /proc -- /bin/true'
+assert_contains "$fixture_log" '-r / /bin/true'
+
+runtime_output=$(HB_FIXTURE_LOG=$fixture_log \
+  HB_BWRAP_VERSION='bubblewrap 0.11.0' HB_BWRAP_STATUS=1 \
+  HB_PROOT_VERSION="$proot_version_release" \
+  "$runtime_test" --bwrap "$bwrap_fixture" --proot "$proot_fixture" \
+  --architecture arm64 --runtime-kind sif)
+assert_runtime_json "$runtime_output" aarch64 sif true false operation-failed true true operational
+
+runtime_output=$(HB_FIXTURE_LOG=$fixture_log \
+  HB_BWRAP_VERSION='bubblewrap 0.11.0' \
+  HB_PROOT_VERSION="$proot_version_release" HB_PROOT_STATUS=1 \
+  "$runtime_test" --bwrap "$bwrap_fixture" --proot "$proot_fixture")
+assert_runtime_json "$runtime_output" "$default_runtime_architecture" direct true true operational true false operation-failed
+
+runtime_output=$(HB_FIXTURE_LOG=$fixture_log \
+  HB_BWRAP_VERSION='bubblewrap 0.11.0' HB_BWRAP_STATUS=1 \
+  HB_PROOT_VERSION="$proot_version_release" HB_PROOT_STATUS=1 \
+  "$runtime_test" --bwrap "$bwrap_fixture" --proot "$proot_fixture")
+assert_runtime_json "$runtime_output" "$default_runtime_architecture" direct true false operation-failed true false operation-failed
+
+runtime_output=$("$runtime_test" --bwrap "$runtime_fixture_dir/missing-bwrap" --proot "$proot_fixture")
+assert_runtime_json "$runtime_output" "$default_runtime_architecture" direct false false missing false false invalid-version
+
+runtime_output=$("$runtime_test" --bwrap "$runtime_fixture_dir/missing-bwrap" --proot "$runtime_fixture_dir/missing-proot")
+assert_runtime_json "$runtime_output" "$default_runtime_architecture" direct false false missing false false missing
+
+runtime_output=$(HB_FIXTURE_LOG=$fixture_log \
+  HB_BWRAP_VERSION='bubblewrap malformed' HB_PROOT_VERSION='proot stale' \
+  "$runtime_test" --bwrap "$bwrap_fixture" --proot "$proot_fixture")
+assert_runtime_json "$runtime_output" "$default_runtime_architecture" direct false false invalid-version false false invalid-version
+
+runtime_output=$(HB_FIXTURE_LOG=$fixture_log \
+  HB_BWRAP_VERSION='bubblewrap 0.11.0' HB_BWRAP_DELAY=2 \
+  HB_PROOT_VERSION="$proot_version_release" \
+  "$runtime_test" --bwrap "$bwrap_fixture" --proot "$proot_fixture" --timeout 1)
+assert_runtime_json "$runtime_output" "$default_runtime_architecture" direct true false timeout true true operational
+
+if ! "$runtime_test" --help > "$runtime_fixture_dir/help.stdout" 2> "$runtime_fixture_dir/help.stderr"; then
+  printf '%s\n' 'runtime test rejected its help request' >&2
+  exit 1
+fi
+assert_contains "$runtime_fixture_dir/help.stdout" 'Usage:'
+if [[ -s $runtime_fixture_dir/help.stderr ]]; then
+  printf '%s\n' 'runtime test emitted help diagnostics to stderr' >&2
+  exit 1
+fi
+
+if "$runtime_test" --timeout zero > "$runtime_fixture_dir/invalid.stdout" 2> "$runtime_fixture_dir/invalid.stderr"; then
+  printf '%s\n' 'runtime test accepted malformed timeout override' >&2
+  exit 1
+else
+  invalid_timeout_status=$?
+fi
+if (( invalid_timeout_status != 2 )); then
+  printf 'runtime test returned %s for malformed timeout override\n' "$invalid_timeout_status" >&2
+  exit 1
+fi
+assert_contains "$runtime_fixture_dir/invalid.stderr" 'Usage:'
+if [[ -s $runtime_fixture_dir/invalid.stdout ]]; then
+  printf '%s\n' 'runtime test emitted JSON for malformed overrides' >&2
+  exit 1
+fi
+if "$runtime_test" --runtime-kind invalid > "$runtime_fixture_dir/unknown.stdout" 2> "$runtime_fixture_dir/unknown.stderr"; then
+  printf '%s\n' 'runtime test accepted unknown runtime kind' >&2
+  exit 1
+else
+  invalid_runtime_kind_status=$?
+fi
+if (( invalid_runtime_kind_status != 2 )); then
+  printf 'runtime test returned %s for unknown runtime kind\n' "$invalid_runtime_kind_status" >&2
+  exit 1
+fi
+assert_contains "$runtime_fixture_dir/unknown.stderr" 'Usage:'
+if [[ -s $runtime_fixture_dir/unknown.stdout ]]; then
+  printf '%s\n' 'runtime test emitted JSON for unknown overrides' >&2
+  exit 1
+fi
 
 printf '%s\n' 'nvim container tooling tests passed'
