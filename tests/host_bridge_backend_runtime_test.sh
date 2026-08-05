@@ -11,7 +11,8 @@
 # --timeout accepts 1-60 seconds; --architecture accepts x86_64/amd64 or
 # aarch64/arm64; --runtime-kind accepts docker, sif, direct, or unknown.
 # Reasons are bounded to missing, invalid-version, timeout, operation-failed, and
-# operational. Version output and backend stdout/stderr are never reported.
+# operational. Version captures have a small file-size limit; operation output is
+# discarded, and backend stdout/stderr are never reported.
 #
 # Side effects: creates a mode-0700 temporary directory under ${TMPDIR:-/tmp} for
 # bounded command captures, then removes it on exit. It reads no live state or
@@ -106,12 +107,25 @@ tempdir=$(mktemp -d "${TMPDIR:-/tmp}/host-bridge-backend-runtime.XXXXXX")
 chmod 700 "$tempdir"
 trap 'rm -rf -- "$tempdir"' EXIT
 
-run_bounded() {
-  local label=$1
-  shift
+run_captured_bounded() {
+  local stdout_path=$1
+  local stderr_path=$2
+  shift 2
 
-  if timeout --signal=TERM --kill-after=1 "$timeout_seconds" "$@" \
-    > "$tempdir/$label.stdout" 2> "$tempdir/$label.stderr"; then
+  if {
+    (
+      ulimit -f 16
+      timeout --kill-after=1 "$timeout_seconds" "$@"
+    ) > "$stdout_path" 2> "$stderr_path"
+  } 2> /dev/null; then
+    run_status=0
+  else
+    run_status=$?
+  fi
+}
+
+run_discarded_bounded() {
+  if timeout --kill-after=1 "$timeout_seconds" "$@" > /dev/null 2>&1; then
     run_status=0
   else
     run_status=$?
@@ -128,19 +142,17 @@ status_reason() {
 bwrap_installed=false
 bwrap_operational=false
 bwrap_reason=missing
-bwrap_version_valid=false
 proot_installed=false
 proot_operational=false
 proot_reason=missing
-proot_version_valid=false
 
 if [[ -n $bwrap_path && -x $bwrap_path ]]; then
-  run_bounded bwrap-version "$bwrap_path" --version
+  run_captured_bounded "$tempdir/bwrap-version.stdout" "$tempdir/bwrap-version.stderr" \
+    "$bwrap_path" --version
   bwrap_version=$(<"$tempdir/bwrap-version.stdout")
   if (( run_status == 0 )) && [[ $bwrap_version =~ ^bubblewrap[[:space:]][0-9]+(\.[0-9]+){1,2}$ ]]; then
     bwrap_installed=true
-    bwrap_version_valid=true
-    run_bounded bwrap-operation "$bwrap_path" \
+    run_discarded_bounded "$bwrap_path" \
       --unshare-user --uid 0 --gid 0 --ro-bind / / --dev /dev --proc /proc -- /bin/true
     if (( run_status == 0 )); then
       bwrap_operational=true
@@ -156,12 +168,12 @@ if [[ -n $bwrap_path && -x $bwrap_path ]]; then
 fi
 
 if [[ -n $proot_path && -x $proot_path ]]; then
-  run_bounded proot-version "$proot_path" --version
+  run_captured_bounded "$tempdir/proot-version.stdout" "$tempdir/proot-version.stderr" \
+    "$proot_path" --version
   if (( run_status == 0 )) \
     && grep -Eq ' v5\.4\.0(-bd5a5f63)?$' "$tempdir/proot-version.stdout"; then
     proot_installed=true
-    proot_version_valid=true
-    run_bounded proot-operation "$proot_path" -r / /bin/true
+    run_discarded_bounded "$proot_path" -r / /bin/true
     if (( run_status == 0 )); then
       proot_operational=true
       proot_reason=operational
@@ -176,20 +188,21 @@ if [[ -n $proot_path && -x $proot_path ]]; then
 fi
 
 python3 - "$architecture" "$runtime_kind" \
-  "$bwrap_installed" "$bwrap_operational" "$bwrap_reason" "$bwrap_version_valid" \
-  "$proot_installed" "$proot_operational" "$proot_reason" "$proot_version_valid" <<'PY'
+  "$bwrap_installed" "$bwrap_operational" "$bwrap_reason" \
+  "$proot_installed" "$proot_operational" "$proot_reason" <<'PY'
 import json
 import sys
 
 architecture, runtime_kind, *values = sys.argv[1:]
 
 def backend(offset):
-    installed, operational, reason, version_valid = values[offset:offset + 4]
+    installed, operational, reason = values[offset:offset + 3]
+    installed = installed == "true"
     return {
-        "installed": installed == "true",
+        "installed": installed,
         "operational": operational == "true",
         "reason": reason,
-        "version_valid": version_valid == "true",
+        "version_valid": installed,
     }
 
 print(json.dumps({
@@ -198,7 +211,7 @@ print(json.dumps({
     "runtime_kind": runtime_kind,
     "backends": {
         "bubblewrap": backend(0),
-        "proot": backend(4),
+        "proot": backend(3),
     },
 }, separators=(",", ":")))
 PY

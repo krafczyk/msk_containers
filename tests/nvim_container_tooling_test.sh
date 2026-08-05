@@ -545,7 +545,7 @@ for dockerfile in "$x86" "$arm"; do
   assert_active "$dockerfile" 'https://github.com/proot-me/proot.git /tmp/proot'
   assert_active "$dockerfile" 'git -C /tmp/proot checkout --detach "${PROOT_REVISION}"'
   assert_active "$dockerfile" 'test "$(git -C /tmp/proot rev-parse HEAD)" = "${PROOT_REVISION}"'
-  assert_active "$dockerfile" "test \"\$(git -C /tmp/proot ls-tree HEAD lib/uthash | awk '{print \$3}')\" = \"\${PROOT_UTHASH_REVISION}\""
+  assert_active "$dockerfile" 'test "$(git -C /tmp/proot ls-tree --object-only HEAD lib/uthash)" = "${PROOT_UTHASH_REVISION}"'
   assert_active "$dockerfile" 'git -C /tmp/proot submodule update --init lib/uthash'
   assert_not_contains "$dockerfile" 'git -C /tmp/proot submodule update --init --recursive'
   assert_active "$dockerfile" 'test "$(git -C /tmp/proot/lib/uthash rev-parse HEAD)" = "${PROOT_UTHASH_REVISION}"'
@@ -652,8 +652,25 @@ make_proot_fixture() {
     'if [[ ${1:-} == --version ]]; then printf "%s\\n" "${HB_PROOT_VERSION}"; exit 0; fi' \
     'printf "%s\\n" "$*" >> "${HB_FIXTURE_LOG}"' \
     '[[ $* == "-r / /bin/true" ]]' \
+    'if [[ -n ${HB_PROOT_WRITE_PATH:-} ]]; then' \
+    '  for ((i = 0; i < 64; i++)); do printf "%1024s" x; done > "${HB_PROOT_WRITE_PATH}"' \
+    'fi' \
     'sleep "${HB_PROOT_DELAY:-0}"' \
     'exit "${HB_PROOT_STATUS:-0}"' > "$path"
+  chmod +x "$path"
+}
+
+make_noisy_version_fixture() {
+  local path=$1
+
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'set -euo pipefail' \
+    'if [[ ${1:-} == --version ]]; then' \
+    '  for ((i = 0; i < 256; i++)); do printf "%4096s" x; done' \
+    '  sleep 3' \
+    'fi' \
+    'exit 0' > "$path"
   chmod +x "$path"
 }
 
@@ -694,9 +711,11 @@ runtime_fixture_dir="$test_tmpdir/host-bridge-runtime"
 mkdir -p "$runtime_fixture_dir"
 bwrap_fixture="$runtime_fixture_dir/bwrap"
 proot_fixture="$runtime_fixture_dir/proot"
+noisy_version_fixture="$runtime_fixture_dir/noisy-version"
 fixture_log="$runtime_fixture_dir/commands"
 make_bwrap_fixture "$bwrap_fixture"
 make_proot_fixture "$proot_fixture"
+make_noisy_version_fixture "$noisy_version_fixture"
 proot_version_release=$' _____ _____              ___\n|__|  |__|__\\_____/\\_____/\\____| v5.4.0\n\nbuilt-in accelerators: process_vm = yes, seccomp_filter = yes'
 proot_version_pinned=$' _____ _____              ___\n|__|  |__|__\\_____/\\_____/\\____| v5.4.0-bd5a5f63\n\nbuilt-in accelerators: process_vm = yes, seccomp_filter = yes'
 case $(uname -m) in
@@ -712,6 +731,17 @@ runtime_output=$(HB_FIXTURE_LOG=$fixture_log \
 assert_runtime_json "$runtime_output" x86_64 docker true true operational true true operational
 assert_contains "$fixture_log" '--unshare-user --uid 0 --gid 0 --ro-bind / / --dev /dev --proc /proc -- /bin/true'
 assert_contains "$fixture_log" '-r / /bin/true'
+
+proot_operation_file="$runtime_fixture_dir/proot-operation-file"
+runtime_output=$(HB_FIXTURE_LOG=$fixture_log \
+  HB_BWRAP_VERSION='bubblewrap 0.11.0' HB_PROOT_VERSION="$proot_version_release" \
+  HB_PROOT_WRITE_PATH=$proot_operation_file \
+  "$runtime_test" --bwrap "$bwrap_fixture" --proot "$proot_fixture")
+assert_runtime_json "$runtime_output" "$default_runtime_architecture" direct true true operational true true operational
+if [[ ! -s $proot_operation_file ]]; then
+  printf '%s\n' 'runtime test constrained backend operation files' >&2
+  exit 1
+fi
 
 runtime_output=$(HB_FIXTURE_LOG=$fixture_log \
   HB_BWRAP_VERSION='bubblewrap 0.11.0' HB_BWRAP_STATUS=1 \
@@ -748,6 +778,22 @@ runtime_output=$(HB_FIXTURE_LOG=$fixture_log \
   HB_PROOT_VERSION="$proot_version_release" \
   "$runtime_test" --bwrap "$bwrap_fixture" --proot "$proot_fixture" --timeout 1)
 assert_runtime_json "$runtime_output" "$default_runtime_architecture" direct true false timeout true true operational
+
+runtime_probe_tmp="$runtime_fixture_dir/tmp"
+mkdir -p "$runtime_probe_tmp"
+runtime_output=$(TMPDIR=$runtime_probe_tmp HB_FIXTURE_LOG=$fixture_log \
+  HB_PROOT_VERSION="$proot_version_release" \
+  "$runtime_test" --bwrap "$noisy_version_fixture" --proot "$proot_fixture" --timeout 1 \
+  2> "$runtime_fixture_dir/noisy.stderr")
+assert_runtime_json "$runtime_output" "$default_runtime_architecture" direct false false invalid-version true true operational
+if [[ -s $runtime_fixture_dir/noisy.stderr ]]; then
+  printf '%s\n' 'runtime test leaked bounded probe diagnostics' >&2
+  exit 1
+fi
+if compgen -G "$runtime_probe_tmp/host-bridge-backend-runtime.*" > /dev/null; then
+  printf '%s\n' 'runtime test left bounded probe captures behind' >&2
+  exit 1
+fi
 
 if ! "$runtime_test" --help > "$runtime_fixture_dir/help.stdout" 2> "$runtime_fixture_dir/help.stderr"; then
   printf '%s\n' 'runtime test rejected its help request' >&2

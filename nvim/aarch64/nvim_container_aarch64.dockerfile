@@ -45,7 +45,7 @@ RUN set -eux; \
       https://github.com/proot-me/proot.git /tmp/proot; \
     git -C /tmp/proot checkout --detach "${PROOT_REVISION}"; \
     test "$(git -C /tmp/proot rev-parse HEAD)" = "${PROOT_REVISION}"; \
-    test "$(git -C /tmp/proot ls-tree HEAD lib/uthash | awk '{print $3}')" = "${PROOT_UTHASH_REVISION}"; \
+    test "$(git -C /tmp/proot ls-tree --object-only HEAD lib/uthash)" = "${PROOT_UTHASH_REVISION}"; \
     git -C /tmp/proot submodule update --init lib/uthash; \
     test "$(git -C /tmp/proot/lib/uthash rev-parse HEAD)" = "${PROOT_UTHASH_REVISION}"; \
     make -C /tmp/proot/src proot; \
