@@ -52,7 +52,8 @@ HOME="$home" bash "$installer" --check >/dev/null
 }
 
 HOME="$home" bash "$installer" >/dev/null
-[[ -x $target/nvim && -x $target/nvim_clear_npm_global && -x $target/ct_exec.sh ]] || {
+[[ -x $target/nvim && -x $target/nvim_clear_npm_global && -x $target/ct_exec.sh \
+  && -x $target/ct_launcher.sh ]] || {
   printf '%s\n' 'installer did not install launchers and container tools' >&2
   exit 1
 }

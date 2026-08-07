@@ -4,6 +4,7 @@ set -euo pipefail
 
 script_dir=$(dirname "$(realpath "$0")")
 
+. "$script_dir/ct_launcher.sh"
 . "$script_dir/nvim_library.sh"
 
 msk_npm_global_base="$HOME/.local/share/msk_containers/npm-global"
@@ -13,7 +14,8 @@ mkdir -p "$msk_npm_global_base"
 
 # Apply the same writable side-installed tools as MkChad without changing the
 # generic shell's Neovim application or XDG environment.
-exec "$script_dir/ct_shell.sh" "--$TOOL" \
+ct_shell=$(ct_launcher_path ct_shell.sh)
+exec "$ct_shell" "--$TOOL" \
   --ct-bind "$msk_npm_global_base:$msk_npm_container_base" \
   --ct-env "MSK_NPM_GLOBAL_BASE=$msk_npm_container_base" \
   --ct-bootstrap "$script_dir/mkchad-container-bootstrap" \

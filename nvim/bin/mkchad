@@ -2,6 +2,7 @@
 
 script_dir=$(dirname "$(realpath "$0")")
 
+. "$script_dir/ct_launcher.sh"
 . "$script_dir/nvim_library.sh"
 
 mkchad_runtime_dir="$HOME/.local/share/mkchad/tmp"
@@ -18,7 +19,8 @@ mkdir -p "$mkchad_runtime_dir" "$mkchad_cache_dir" "$msk_npm_global_base"
 
 # Launch MkChad inside the persistent instance that owns detached service image
 # mounts after an editor exits.
-exec "$script_dir/ct_instance_exec.sh" "--$TOOL" \
+ct_instance_exec=$(ct_launcher_path ct_instance_exec.sh) || exit $?
+exec "$ct_instance_exec" "--$TOOL" \
   --ct-instance-root "$mkchad_runtime_dir/container-instances" \
   --ct-bind "$msk_npm_global_base:$msk_npm_container_base" \
   --ct-env "MKCHAD_PERSISTENT_INSTANCE=1" \

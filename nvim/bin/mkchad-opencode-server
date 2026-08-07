@@ -7,6 +7,7 @@ set -euo pipefail
 
 program=${0##*/}
 script_dir=$(dirname "$(realpath "$0")")
+. "$script_dir/ct_launcher.sh"
 image_command="$script_dir/mkchad-opencode-server-image"
 bootstrap="$script_dir/mkchad-container-bootstrap"
 config_home=${XDG_CONFIG_HOME:-"$HOME/.config"}
@@ -51,12 +52,11 @@ image=${NVIM_CONT_LOCATION:-"$container_dir/neovim.sif"}
 [[ -f $image ]] || die "active Neovim image is missing: $image"
 
 if [[ ${1:-} == status ]]; then
-  foreground_launcher="$script_dir/ct_exec.sh"
+  foreground_launcher=$(ct_launcher_path ct_exec.sh)
   evidence_collector="$script_dir/mkchad-status-host-evidence"
   runtime_executable=$(realpath -- "$runtime_executable")
   system_path=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
   status_path="${runtime_executable%/*}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-  [[ -x $foreground_launcher ]] || die "foreground container launcher is missing or not executable: $foreground_launcher"
   [[ -x $evidence_collector ]] || die "host evidence collector is missing or not executable: $evidence_collector"
 
   # The evidence collector has one combined budget and emits only validated
@@ -102,8 +102,7 @@ if [[ ${1:-} == status ]]; then
     "$image_command" "$@" --host-evidence-v1 "$host_evidence"
 fi
 
-container_launcher="$script_dir/ct_instance_exec.sh"
-[[ -x $container_launcher ]] || die "persistent container launcher is missing or not executable: $container_launcher"
+container_launcher=$(ct_launcher_path ct_instance_exec.sh)
 
 # The runtime normally mounts HOME, which covers the default state root. A
 # custom root outside HOME must be visible at the same absolute path so separate

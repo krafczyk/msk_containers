@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-work=${1:?pass a task-specific directory beneath /tmp/opencode-mkchad}
+work=${1:?pass a task-specific directory beneath /tmp/mkchad-v1}
 wrapper=${2:?pass the wrapper path}
 wrapper=$(realpath "$wrapper")
-[[ $work == /tmp/opencode-mkchad/* ]] || { printf '%s\n' 'test directory must be beneath /tmp/opencode-mkchad' >&2; exit 2; }
+[[ $work == /tmp/mkchad-v1/* ]] || { printf '%s\n' 'test directory must be beneath /tmp/mkchad-v1' >&2; exit 2; }
 [[ ! -e $work ]] || { printf '%s\n' 'test directory already exists' >&2; exit 2; }
 
 home="$work/home"
@@ -16,6 +16,7 @@ container_dir="$home/containers"
 image_target="$container_dir/neovim_test.sif"
 image="$container_dir/neovim.sif"
 runtime_log="$work/runtime.log"
+launcher_log="$home/launcher.log"
 status_log="$home/runtime.log"
 nvim_log="$work/nvim.log"
 installed_wrapper="$bin/mkchad-opencode-server"
@@ -24,7 +25,10 @@ installed_mkchad="$bin/mkchad"
 mount_config="$work/ct_mount.conf"
 repo=${wrapper%/nvim/bin/mkchad-opencode-server}
 installer="$repo/bin/install_nvim.sh"
-mkdir -p "$home" "$config/mkchad/lua/mkchad/opencode" "$fake" "$container_dir"
+alternate_tools="$work/alternate/container_tools"
+alternate_link="$work/alternate-link"
+mkdir -p "$home" "$config/mkchad/lua/mkchad/opencode" "$fake" "$container_dir" "$alternate_tools"
+ln -s "$alternate_tools" "$alternate_link"
 : > "$config/mkchad/lua/mkchad/opencode/command.lua"
 chmod 700 "$container_dir"
 : > "$image_target"
@@ -44,12 +48,14 @@ EOF
 cat > "$bin/ct_instance_exec.sh" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$@" > "$MKCHAD_TEST_RUNTIME_LOG"
+printf 'ct_instance_exec:%s\n' "$0" >> "$HOME/launcher.log"
 printf 'mount_config=%s\n' "${CT_MOUNT_CFG:-}" >> "$MKCHAD_TEST_RUNTIME_LOG"
 exit 23
 EOF
 cat > "$bin/ct_exec.sh" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$@" > "$HOME/runtime.log"
+printf 'ct_exec:%s\n' "$0" >> "$HOME/launcher.log"
 container_env=()
 while (($#)); do
   case "$1" in
@@ -62,6 +68,8 @@ image=$1
 shift
 env "${container_env[@]}" SINGULARITY_CONTAINER="$image" "$@"
 EOF
+cp "$bin/ct_instance_exec.sh" "$alternate_tools/ct_instance_exec.sh"
+cp "$bin/ct_exec.sh" "$alternate_tools/ct_exec.sh"
 cat > "$fake/nvim" <<'EOF'
 #!/usr/bin/env bash
 log=${MKCHAD_TEST_NVIM_LOG:-"${XDG_CONFIG_HOME%/*}/nvim.log"}
@@ -74,7 +82,8 @@ cat > "$fake/node" <<'EOF'
 [[ ${1:-} == -p ]] || exit 64
 printf '%s\n' 'linux-x64-node24'
 EOF
-chmod 755 "$fake/apptainer" "$fake/nvim" "$fake/node" "$bin/ct_instance_exec.sh" "$bin/ct_exec.sh"
+chmod 755 "$fake/apptainer" "$fake/nvim" "$fake/node" "$bin/ct_instance_exec.sh" "$bin/ct_exec.sh" \
+  "$alternate_tools/ct_instance_exec.sh" "$alternate_tools/ct_exec.sh"
 
 base_env=(
   "HOME=$home"
@@ -100,10 +109,13 @@ set -e
 }
 
 set +e
-env -u SINGULARITY_CONTAINER -u APPTAINER_CONTAINER -u XDG_STATE_HOME "${base_env[@]}" MKCHAD_NVIM_CONTAINER=1 "$installed_wrapper" status --json
+env -u SINGULARITY_CONTAINER -u APPTAINER_CONTAINER -u XDG_STATE_HOME -u CT_ROOT "${base_env[@]}" MKCHAD_NVIM_CONTAINER=1 "$installed_wrapper" status --json
 host_status=$?
 set -e
 [[ $host_status -eq 19 ]] || { printf '%s\n' 'status did not use the foreground container executor' >&2; exit 1; }
+[[ $(<"$launcher_log") == "ct_exec:$bin/ct_exec.sh" ]] || {
+  printf '%s\n' 'unset CT_ROOT did not use the installed co-located foreground launcher' >&2; exit 1;
+}
 mapfile -t runtime_argv < "$status_log"
 [[ ${runtime_argv[0]} == --apptainer \
   && ${runtime_argv[1]} == --ct-bind && ${runtime_argv[2]} == "$config:$config:ro" \
@@ -141,6 +153,20 @@ PY
 }
 [[ $(<"$nvim_log") == *"marker=1 home=/nonexistent state=$state_default runtime=/nonexistent/.local/share/mkchad/tmp cache=$home/.local/cache data=$home/.local/share base=/opt/msk/npm-global"* ]] || {
   printf '%s\n' 'status did not preserve its clean-home XDG environment in the image' >&2; exit 1;
+}
+
+rm -f "$launcher_log"
+set +e
+env -u SINGULARITY_CONTAINER -u APPTAINER_CONTAINER "${base_env[@]}" CT_ROOT="$alternate_link" \
+  "$installed_wrapper" status --json
+alternate_status=$?
+set -e
+[[ $alternate_status -eq 19 && $(<"$launcher_log") == "ct_exec:$alternate_tools/ct_exec.sh" ]] || {
+  printf '%s\n' 'status did not use the canonical checkout-shaped CT_ROOT' >&2; exit 1;
+}
+mapfile -t alternate_status_argv < "$status_log"
+[[ ${alternate_status_argv[18]} == "$bin/mkchad-container-bootstrap" ]] || {
+  printf '%s\n' 'CT_ROOT redirected the launcher-relative server bootstrap' >&2; exit 1;
 }
 
 mkdir -p "$home/.local/share/mkchad"
@@ -325,13 +351,16 @@ exit 64
 EOF
 chmod 755 "$fake/apptainer"
 
-rm -f "$runtime_log"
+rm -f "$runtime_log" "$launcher_log"
 set +e
 env -u SINGULARITY_CONTAINER -u APPTAINER_CONTAINER "${base_env[@]}" \
-  "$installed_mkchad" 'file with spaces' >"$work/mkchad.out"
+  CT_ROOT="$alternate_link" "$installed_mkchad" 'file with spaces' >"$work/mkchad.out"
 mkchad_status=$?
 set -e
 [[ $mkchad_status -eq 23 ]] || { printf '%s\n' 'MkChad launcher did not preserve instance payload status' >&2; exit 1; }
+[[ $(<"$launcher_log") == "ct_instance_exec:$alternate_tools/ct_instance_exec.sh" ]] || {
+  printf '%s\n' 'MkChad launcher did not use CT_ROOT for persistent dispatch' >&2; exit 1;
+}
 mapfile -t mkchad_runtime_argv < "$runtime_log"
 [[ ${mkchad_runtime_argv[0]} == --apptainer \
   && ${mkchad_runtime_argv[1]} == --ct-instance-root \
@@ -349,13 +378,16 @@ mapfile -t mkchad_runtime_argv < "$runtime_log"
 
 custom_state="$work/state root"
 mkdir -p "$custom_state"
-rm "$runtime_log"
+rm -f "$runtime_log" "$launcher_log"
 set +e
 env -u SINGULARITY_CONTAINER -u APPTAINER_CONTAINER "${base_env[@]}" \
-  "XDG_STATE_HOME=$custom_state" "$installed_wrapper" start --json
+  "XDG_STATE_HOME=$custom_state" CT_ROOT="$alternate_link" "$installed_wrapper" start --json
 custom_status=$?
 set -e
 [[ $custom_status -eq 23 ]] || { printf '%s\n' 'custom state host invocation did not preserve container status' >&2; exit 1; }
+[[ $(<"$launcher_log") == "ct_instance_exec:$alternate_tools/ct_instance_exec.sh" ]] || {
+  printf '%s\n' 'persistent server dispatch did not use CT_ROOT' >&2; exit 1;
+}
 mapfile -t custom_runtime_argv < "$runtime_log"
 [[ ${custom_runtime_argv[0]} == --apptainer \
   && ${custom_runtime_argv[3]} == --ct-bind \

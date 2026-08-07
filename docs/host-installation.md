@@ -4,6 +4,25 @@
 their container-tool launchers. Normal callers use this interface rather than
 copying individual outputs.
 
+## Container Tool Override
+
+Host launchers normally resolve `ct_*.sh` container tools co-located with the
+launcher, including an installation in `~/.local/bin`. Set `CT_ROOT` to use a
+different tool directory, such as a checkout's `/path/to/container_tools` or a
+flat tool installation directory:
+
+```bash
+CT_ROOT=/path/to/container_tools mkchad
+```
+
+`CT_ROOT` must be an absolute path to an existing directory and is
+canonicalized before use. The requested `ct_*.sh` file must be a regular
+executable; an invalid override fails without falling back to co-located tools.
+An unset or empty `CT_ROOT` preserves co-located lookup. The override affects
+only container-tool dispatch, not MkChad launchers, bootstrap scripts, image
+lifecycle commands, or configuration, cache, state, and persistent-instance
+paths.
+
 ## Release Deployer Handoff
 
 The schema-2 `mkchad-release` deployer calls the pinned checkout with a fresh,
