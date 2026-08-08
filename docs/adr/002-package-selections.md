@@ -126,7 +126,8 @@ the verified archive bytes into an isolated Docker or SingularityCE build
 context. The image definitions install the archive under
 `/opt/msk/container-tools`, verify package identity there, record that identity
 in Docker labels and `/etc/mkchad/container-tools-package.json`, and prepend its
-`bin/` directory to `PATH`.
+`bin/` directory to `PATH`. The in-image identity is explicitly mode `0644` so
+unprivileged runtime inspection can verify it.
 
 The x86_64 and aarch64 packages use musl. PPC64LE uses static glibc and the
 image definition rejects an executable with dynamic `NEEDED` or interpreter

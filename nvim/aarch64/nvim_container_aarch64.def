@@ -12,6 +12,7 @@ From: nvim_container_aarch64.tar
 
 %post
     set -eu
+    chmod 0644 /etc/mkchad/container-tools-package.json
     printf '%s  %s\n' "$(cat /tmp/container-tools-package.sha256)" /tmp/container-tools-package.tar.gz | sha256sum -c - >/dev/null
     test "$(cat /tmp/container-tools-package.architecture)" = aarch64
     test "$(cat /tmp/container-tools-package.libc)" = musl

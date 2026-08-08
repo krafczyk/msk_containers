@@ -108,18 +108,25 @@ assert_x86_package_staging() {
   local package_major=${package_version%%.*}
 
   mkdir "$context" "$test_tmpdir/rejected-context"
-  CONTAINER_TOOLS_PACKAGE_ARCHIVE_X86_64=$package_archive \
-    CONTAINER_TOOLS_PACKAGE_SHA256_X86_64=$package_sha256 \
-    CONTAINER_TOOLS_PACKAGE_VERSION_X86_64=$package_version \
-    CONTAINER_TOOLS_PACKAGE_SOURCE_COMMIT_X86_64=$package_commit \
-    CONTAINER_TOOLS_PACKAGE_LIBC_X86_64=$package_libc \
-    "$repo/nvim/bin/stage_container_tools_package.sh" x86_64 "$context"
+  (
+    umask 077
+    CONTAINER_TOOLS_PACKAGE_ARCHIVE_X86_64=$package_archive \
+      CONTAINER_TOOLS_PACKAGE_SHA256_X86_64=$package_sha256 \
+      CONTAINER_TOOLS_PACKAGE_VERSION_X86_64=$package_version \
+      CONTAINER_TOOLS_PACKAGE_SOURCE_COMMIT_X86_64=$package_commit \
+      CONTAINER_TOOLS_PACKAGE_LIBC_X86_64=$package_libc \
+      "$repo/nvim/bin/stage_container_tools_package.sh" x86_64 "$context"
+  )
   cmp "$package_archive" "$context/container-tools-package.tar.gz"
   [[ $(<"$context/container-tools-package.sha256") == "$package_sha256" ]] || exit 1
   expected_metadata=$(printf '{"role":"container","architecture":"x86_64","version":"%s","product_major":%s,"source_commit":"%s","sha256":"%s","libc":"%s","source_filename_class":"container-tools-package"}' \
     "$package_version" "$package_major" "$package_commit" "$package_sha256" "$package_libc")
   [[ $(<"$context/container-tools-package.json") == "$expected_metadata" ]] || {
     printf '%s\n' 'package staging did not produce the closed container identity' >&2
+    exit 1
+  }
+  [[ $(stat -c %a "$context/container-tools-package.json") == 644 ]] || {
+    printf '%s\n' 'package staging did not make container identity metadata readable' >&2
     exit 1
   }
   if CONTAINER_TOOLS_PACKAGE_ARCHIVE_X86_64=$package_archive \
@@ -681,6 +688,8 @@ for arch in x86 aarch64 ppc64le; do
   assert_active "$definition" 'export MSK_NPM_GLOBAL_ROOT="${MSK_NPM_GLOBAL_BASE}"'
   assert_active "$dockerfile" 'COPY container-tools-package.json /etc/mkchad/container-tools-package.json'
   assert_active "$definition" 'container-tools-package.json /etc/mkchad/container-tools-package.json'
+  assert_active "$dockerfile" 'chmod 0644 /etc/mkchad/container-tools-package.json'
+  assert_active "$definition" 'chmod 0644 /etc/mkchad/container-tools-package.json'
   assert_not_contains "$definition" 'MSK_CONTAINER_ARCH'
   assert_not_contains "$definition" 'MSK_NODE_GLOBAL_KEY'
   assert_not_contains "$definition" 'NPM_CONFIG_PREFIX'

@@ -71,6 +71,7 @@ product_major=${version%%.*}
 printf '{"role":"container","architecture":"%s","version":"%s","product_major":%s,"source_commit":"%s","sha256":"%s","libc":"%s","source_filename_class":"container-tools-package"}\n' \
   "$architecture" "$version" "$product_major" "$source_commit" "$digest" "$libc" \
   > "$staged_metadata"
+chmod 0644 -- "$staged_metadata"
 mv -- "$staged_archive" "$context/container-tools-package.tar.gz"
 staged_archive=
 mv -- "$staged_metadata" "$context/container-tools-package.json"

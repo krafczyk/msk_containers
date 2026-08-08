@@ -14,6 +14,7 @@ LABEL org.mkchad.container-tools.sha256="${CONTAINER_TOOLS_PACKAGE_SHA256}" \
 COPY container-tools-package.tar.gz /tmp/container-tools-package.tar.gz
 COPY container-tools-package.json /etc/mkchad/container-tools-package.json
 RUN set -eux; \
+    chmod 0644 /etc/mkchad/container-tools-package.json; \
     echo "${CONTAINER_TOOLS_PACKAGE_SHA256}  /tmp/container-tools-package.tar.gz" | sha256sum --check --strict -; \
     mkdir -p /opt/msk/container-tools; \
     tar -xzf /tmp/container-tools-package.tar.gz --strip-components=1 -C /opt/msk/container-tools; \
