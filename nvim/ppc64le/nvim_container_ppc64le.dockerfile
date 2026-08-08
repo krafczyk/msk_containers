@@ -12,6 +12,7 @@ LABEL org.mkchad.container-tools.sha256="${CONTAINER_TOOLS_PACKAGE_SHA256}" \
       org.mkchad.container-tools.architecture="${CONTAINER_TOOLS_PACKAGE_ARCHITECTURE}" \
       org.mkchad.container-tools.libc="${CONTAINER_TOOLS_PACKAGE_LIBC}"
 COPY container-tools-package.tar.gz /tmp/container-tools-package.tar.gz
+COPY container-tools-package.json /etc/mkchad/container-tools-package.json
 RUN set -eux; \
     echo "${CONTAINER_TOOLS_PACKAGE_SHA256}  /tmp/container-tools-package.tar.gz" | sha256sum --check --strict -; \
     mkdir -p /opt/msk/container-tools; \

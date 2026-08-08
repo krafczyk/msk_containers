@@ -44,12 +44,16 @@ child="$repo/container_tools"
 
 work_root=$(mktemp -d /tmp/mkchad-v1/container-tools-c11/image-package-verify.XXXXXX)
 staged_archive="$context/.container-tools-package.tar.gz.$$"
+staged_metadata="$context/.container-tools-package.json.$$"
 cleanup() {
   rm -rf -- "$work_root"
   [[ -z $staged_archive || ! -e $staged_archive ]] || rm -f -- "$staged_archive"
+  [[ -z $staged_metadata || ! -e $staged_metadata ]] || rm -f -- "$staged_metadata"
 }
 trap cleanup EXIT
-[[ ! -e $context/container-tools-package.tar.gz && ! -e $staged_archive ]] || {
+[[ ! -e $context/container-tools-package.tar.gz &&
+   ! -e $context/container-tools-package.json && ! -e $staged_archive &&
+   ! -e $staged_metadata ]] || {
   printf '%s\n' 'container-tools package is already staged in the image context' >&2
   exit 78
 }
@@ -63,8 +67,14 @@ cp -- "$archive" "$staged_archive"
   --source-commit "$source_commit" --architecture "$architecture" --libc "$libc" \
   --work-root "$work_root" >/dev/null
 
+product_major=${version%%.*}
+printf '{"role":"container","architecture":"%s","version":"%s","product_major":%s,"source_commit":"%s","sha256":"%s","libc":"%s","source_filename_class":"container-tools-package"}\n' \
+  "$architecture" "$version" "$product_major" "$source_commit" "$digest" "$libc" \
+  > "$staged_metadata"
 mv -- "$staged_archive" "$context/container-tools-package.tar.gz"
 staged_archive=
+mv -- "$staged_metadata" "$context/container-tools-package.json"
+staged_metadata=
 printf '%s\n' "$digest" > "$context/container-tools-package.sha256"
 printf '%s\n' "$version" > "$context/container-tools-package.version"
 printf '%s\n' "$source_commit" > "$context/container-tools-package.source-commit"

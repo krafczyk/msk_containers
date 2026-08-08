@@ -8,6 +8,7 @@ From: nvim_container_x86.tar
     container-tools-package.source-commit /tmp/container-tools-package.source-commit
     container-tools-package.architecture /tmp/container-tools-package.architecture
     container-tools-package.libc /tmp/container-tools-package.libc
+    container-tools-package.json /etc/mkchad/container-tools-package.json
 
 %post
     set -eu

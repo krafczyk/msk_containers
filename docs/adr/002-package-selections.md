@@ -125,7 +125,8 @@ verify those inputs against the clean `container_tools` gitlink and stage only
 the verified archive bytes into an isolated Docker or SingularityCE build
 context. The image definitions install the archive under
 `/opt/msk/container-tools`, verify package identity there, record that identity
-in Docker labels, and prepend its `bin/` directory to `PATH`.
+in Docker labels and `/etc/mkchad/container-tools-package.json`, and prepend its
+`bin/` directory to `PATH`.
 
 The x86_64 and aarch64 packages use musl. PPC64LE uses static glibc and the
 image definition rejects an executable with dynamic `NEEDED` or interpreter
