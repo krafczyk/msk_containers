@@ -5,12 +5,34 @@ set -euo pipefail
 
 script_dir=$(dirname "$(realpath "$0")")
 nvim_dir=$(realpath "$script_dir/..")
-repo_dir=$(realpath "$nvim_dir/..")
-# shellcheck source=../../container_tools/ct_library.sh
-. "$repo_dir/container_tools/ct_library.sh"
+context=$(mktemp -d /tmp/mkchad-v1/container-tools-c11/nvim-aarch64-docker-context.XXXXXX)
+trap 'rm -rf -- "$context"' EXIT
 
-configure_docker_build_storage aarch64
-trap discard_docker_build_storage EXIT
-docker buildx build --platform linux/arm64 -f "$nvim_dir/aarch64/nvim_container_aarch64.dockerfile" -t nvim_container_aarch64:latest "${DOCKER_BUILD_CACHE_ARGS[@]}" --load "$nvim_dir"
-commit_docker_build_storage
-trap - EXIT
+if [[ -n ${CT_ROOT:-} ]]; then
+    [[ $CT_ROOT == /* ]] || { printf 'CT_ROOT must be an absolute package bin directory\n' >&2; exit 1; }
+    container_tools=$(realpath -e -- "$CT_ROOT/container-tools" 2>/dev/null) || {
+        printf 'container-tools executable is not usable beneath CT_ROOT: %s\n' "$CT_ROOT" >&2
+        exit 1
+    }
+else
+    container_tools=$(command -v container-tools) || {
+        printf 'container-tools executable was not found on PATH\n' >&2
+        exit 1
+    }
+fi
+
+if [[ ! -f $container_tools || ! -x $container_tools ]] || ! "$container_tools" package verify >/dev/null; then
+    printf 'container-tools executable is not a complete package: %s\n' "$container_tools" >&2
+    exit 1
+fi
+
+cp -a -- "$nvim_dir/." "$context"
+"$nvim_dir/bin/stage_container_tools_package.sh" aarch64 "$context"
+"$container_tools" buildx exec --architecture aarch64 -- docker buildx build \
+    --build-arg "CONTAINER_TOOLS_PACKAGE_SHA256=$(<"$context/container-tools-package.sha256")" \
+    --build-arg "CONTAINER_TOOLS_PACKAGE_VERSION=$(<"$context/container-tools-package.version")" \
+    --build-arg "CONTAINER_TOOLS_PACKAGE_SOURCE_COMMIT=$(<"$context/container-tools-package.source-commit")" \
+    --build-arg "CONTAINER_TOOLS_PACKAGE_ARCHITECTURE=$(<"$context/container-tools-package.architecture")" \
+    --build-arg "CONTAINER_TOOLS_PACKAGE_LIBC=$(<"$context/container-tools-package.libc")" \
+    --platform linux/arm64 -f "$context/aarch64/nvim_container_aarch64.dockerfile" \
+    -t nvim_container_aarch64:latest --load "$context"

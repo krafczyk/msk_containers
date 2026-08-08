@@ -1,9 +1,30 @@
 Bootstrap: docker-archive
 From: nvim_container_ppc64le.tar
 
+%files
+    container-tools-package.tar.gz /tmp/container-tools-package.tar.gz
+    container-tools-package.sha256 /tmp/container-tools-package.sha256
+    container-tools-package.version /tmp/container-tools-package.version
+    container-tools-package.source-commit /tmp/container-tools-package.source-commit
+    container-tools-package.architecture /tmp/container-tools-package.architecture
+    container-tools-package.libc /tmp/container-tools-package.libc
+
+%post
+    set -eu
+    printf '%s  %s\n' "$(cat /tmp/container-tools-package.sha256)" /tmp/container-tools-package.tar.gz | sha256sum -c - >/dev/null
+    test "$(cat /tmp/container-tools-package.architecture)" = ppc64le
+    test "$(cat /tmp/container-tools-package.libc)" = glibc
+    mkdir -p /opt/msk/container-tools
+    tar -xzf /tmp/container-tools-package.tar.gz --strip-components=1 -C /opt/msk/container-tools
+    ! readelf -d /opt/msk/container-tools/bin/container-tools | grep -Eq 'NEEDED|INTERP'
+    /opt/msk/container-tools/bin/container-tools package verify --json | grep -Fq "\"product_version\":\"$(cat /tmp/container-tools-package.version)\""
+    /opt/msk/container-tools/bin/container-tools package verify --json | grep -Fq "\"source_commit\":\"$(cat /tmp/container-tools-package.source-commit)\""
+    rm -f /tmp/container-tools-package.*
+
 %environment
     export CC=clang
     export MKCHAD_NVIM_IMAGE=1
+    export PATH=/opt/msk/container-tools/bin:$PATH
 
     if [ -n "${MSK_NPM_GLOBAL_BASE:-}" ]; then
         export MSK_NPM_GLOBAL_ROOT="${MSK_NPM_GLOBAL_BASE}"

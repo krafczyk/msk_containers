@@ -103,9 +103,8 @@ Fedora package names, but DNF may satisfy an executable capability such as
 
 The x86_64 and aarch64 Fedora 43 images select the following direct RPMs from
 the Fedora 43 package/update stream. They provide complementary full-root
-backends and the native musl toolchain required by the future C11 host bridge.
-PPC64LE is explicitly excluded: the host-bridge plan supports only the x86_64
-and aarch64 Neovim images, so its Dockerfile receives none of these selections.
+backends and the native musl toolchain required by container-tools. PPC64LE
+uses its native GCC toolchain with `glibc-static` for its static package.
 
 | Package | Architectures | Version/source policy | Purpose |
 | --- | --- | --- | --- |
@@ -115,6 +114,25 @@ and aarch64 Neovim images, so its Dockerfile receives none of these selections.
 | `musl-gcc` | x86, ARM | Fedora 43 package/update stream | Provides the native musl compiler wrapper for static C11 executables. |
 | `musl-devel` | x86, ARM | Fedora 43 package/update stream | Provides native musl headers and development metadata. |
 | `musl-libc-static` | x86, ARM | Fedora 43 package/update stream | Provides the native static musl C library. |
+| `glibc-static` | PPC | Fedora Rawhide package stream | Provides static glibc objects for the PPC64LE container-tools package. |
+
+## Container-Tools Package Delivery
+
+`container-tools` is selected as an independently verified static package for
+each maintained image architecture. Build callers receive an explicit archive,
+SHA-256, version, source commit, and libc family for their architecture; they
+verify those inputs against the clean `container_tools` gitlink and stage only
+the verified archive bytes into an isolated Docker or SingularityCE build
+context. The image definitions install the archive under
+`/opt/msk/container-tools`, verify package identity there, record that identity
+in Docker labels, and prepend its `bin/` directory to `PATH`.
+
+The x86_64 and aarch64 packages use musl. PPC64LE uses static glibc and the
+image definition rejects an executable with dynamic `NEEDED` or interpreter
+entries before accepting it. Archive bytes are deliberately not tracked in this
+repository: release/deployment integration supplies the selected per-architecture
+archive in later work. The verified x86_64 archive used by focused parent tests
+does not select an archive for aarch64 or ppc64le.
 
 PRoot is built from its upstream Git repository rather than downloaded as a
 binary. Both maintained Dockerfiles clone

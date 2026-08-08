@@ -1,27 +1,28 @@
 # Host Installation
 
-`bin/install_nvim.sh` is the public installer for MkChad host launchers and
-their container-tool launchers. Normal callers use this interface rather than
-copying individual outputs.
+`bin/install_nvim.sh` is the public installer for MkChad host launchers and a
+verified container-tools package. It requires one explicit package identity:
+archive, SHA-256, version, source commit, architecture, and libc family. The
+same values may be passed as `--container-tools-*` options or as the
+`CONTAINER_TOOLS_HOST_PACKAGE_*` environment variables used by deployment.
+Normal callers use this interface rather than copying individual outputs.
 
 ## Container Tool Override
 
-Host launchers normally resolve `ct_*.sh` container tools co-located with the
-launcher, including an installation in `~/.local/bin`. Set `CT_ROOT` to use a
-different tool directory, such as a checkout's `/path/to/container_tools` or a
-flat tool installation directory:
+Host launchers normally resolve `ct_*.sh` tools from the complete package in
+`~/.local/bin`. Set `CT_ROOT` to choose another complete package `bin/`
+directory:
 
 ```bash
-CT_ROOT=/path/to/container_tools mkchad
+CT_ROOT=/opt/container-tools/bin mkchad
 ```
 
-`CT_ROOT` must be an absolute path to an existing directory and is
-canonicalized before use. The requested `ct_*.sh` file must be a regular
-executable; an invalid override fails without falling back to co-located tools.
-An unset or empty `CT_ROOT` preserves co-located lookup. The override affects
-only container-tool dispatch, not MkChad launchers, bootstrap scripts, image
-lifecycle commands, or configuration, cache, state, and persistent-instance
-paths.
+`CT_ROOT` must be an absolute complete package `bin/` directory containing
+`container-tools` and all five compatibility scripts. Raw checkouts and partial
+packages fail without falling back to co-located tools. An unset or empty
+`CT_ROOT` preserves co-located lookup. The override affects only container-tool
+dispatch, not MkChad launchers, bootstrap scripts, image lifecycle commands, or
+configuration, cache, state, and persistent-instance paths.
 
 ## Release Deployer Handoff
 
@@ -29,15 +30,15 @@ The schema-2 `mkchad-release` deployer calls the pinned checkout with a fresh,
 private mode-`0700` directory for both preflight and apply:
 
 ```bash
-bin/install_nvim.sh --check --recovery-dir /private/deployment-recovery
-bin/install_nvim.sh --recovery-dir /private/deployment-recovery
+bin/install_nvim.sh --check --container-tools-archive PACKAGE ...
+bin/install_nvim.sh --recovery-dir /private/deployment-recovery --container-tools-archive PACKAGE ...
 ```
 
-`--check` validates sources and outputs without creating target paths. Apply
-rechecks under its per-target lock and leaves byte-identical mode-`0755` outputs
-untouched. The directory is an ephemeral caller input used by the existing
-installer replacement interface; it is not deployment evidence and must not be
-reused for another apply.
+`--check` validates archive identity without creating target paths. Apply uses
+the child package installer transaction for `${HOME}/.local`, then installs
+launcher files under the same parent lock. Recovery is private and records
+replacement state; the two managed directory updates are recoverable rather
+than claimed to be one impossible multi-directory atomic rename.
 
 `bin/install_tools.sh` exposes the same `--check` and `--recovery-dir`
 interface. `install_nvim.sh` remains the public entrypoint when both launchers

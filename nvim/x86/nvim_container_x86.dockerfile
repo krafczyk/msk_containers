@@ -1,6 +1,28 @@
 # Use the Docker Official Fedora 43 multi-architecture image pinned by index digest.
 FROM docker.io/library/fedora:43@sha256:762d73ba1c455232b0272c5d445a34f36c4b9f421cbc05ce8102552325b6a222 AS nvim_container_base
 
+ARG CONTAINER_TOOLS_PACKAGE_SHA256
+ARG CONTAINER_TOOLS_PACKAGE_VERSION
+ARG CONTAINER_TOOLS_PACKAGE_SOURCE_COMMIT
+ARG CONTAINER_TOOLS_PACKAGE_ARCHITECTURE
+ARG CONTAINER_TOOLS_PACKAGE_LIBC
+LABEL org.mkchad.container-tools.sha256="${CONTAINER_TOOLS_PACKAGE_SHA256}" \
+      org.mkchad.container-tools.version="${CONTAINER_TOOLS_PACKAGE_VERSION}" \
+      org.mkchad.container-tools.source-commit="${CONTAINER_TOOLS_PACKAGE_SOURCE_COMMIT}" \
+      org.mkchad.container-tools.architecture="${CONTAINER_TOOLS_PACKAGE_ARCHITECTURE}" \
+      org.mkchad.container-tools.libc="${CONTAINER_TOOLS_PACKAGE_LIBC}"
+COPY container-tools-package.tar.gz /tmp/container-tools-package.tar.gz
+RUN set -eux; \
+    echo "${CONTAINER_TOOLS_PACKAGE_SHA256}  /tmp/container-tools-package.tar.gz" | sha256sum --check --strict -; \
+    mkdir -p /opt/msk/container-tools; \
+    tar -xzf /tmp/container-tools-package.tar.gz --strip-components=1 -C /opt/msk/container-tools; \
+    rm -f /tmp/container-tools-package.tar.gz; \
+    /opt/msk/container-tools/bin/container-tools package verify --json | grep -Fq "\"product_version\":\"${CONTAINER_TOOLS_PACKAGE_VERSION}\""; \
+    /opt/msk/container-tools/bin/container-tools package verify --json | grep -Fq "\"source_commit\":\"${CONTAINER_TOOLS_PACKAGE_SOURCE_COMMIT}\""; \
+    test "${CONTAINER_TOOLS_PACKAGE_ARCHITECTURE}" = x86_64; \
+    test "${CONTAINER_TOOLS_PACKAGE_LIBC}" = musl
+ENV PATH="/opt/msk/container-tools/bin:$PATH"
+
 # Update and install essential packages
 RUN dnf update -y && \
     dnf install -y wget git gcc gcc-c++ \

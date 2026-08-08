@@ -16,6 +16,12 @@ launcher_log="$work/launcher.log"
 npm_base="$home/.local/share/msk_containers/npm-global"
 repo=${wrapper%/nvim/bin/nvim_shell}
 installer="$repo/bin/install_nvim.sh"
+export CONTAINER_TOOLS_HOST_PACKAGE_ARCHIVE=${CONTAINER_TOOLS_HOST_PACKAGE_ARCHIVE:?pass the verified host package archive}
+export CONTAINER_TOOLS_HOST_PACKAGE_SHA256=${CONTAINER_TOOLS_HOST_PACKAGE_SHA256:?pass the host package SHA-256}
+export CONTAINER_TOOLS_HOST_PACKAGE_VERSION=${CONTAINER_TOOLS_HOST_PACKAGE_VERSION:?pass the host package version}
+export CONTAINER_TOOLS_HOST_PACKAGE_SOURCE_COMMIT=${CONTAINER_TOOLS_HOST_PACKAGE_SOURCE_COMMIT:?pass the host package source commit}
+export CONTAINER_TOOLS_HOST_PACKAGE_ARCHITECTURE=${CONTAINER_TOOLS_HOST_PACKAGE_ARCHITECTURE:?pass the host package architecture}
+export CONTAINER_TOOLS_HOST_PACKAGE_LIBC=${CONTAINER_TOOLS_HOST_PACKAGE_LIBC:?pass the host package libc}
 alternate_tools="$work/alternate/container_tools"
 alternate_link="$work/alternate-link"
 nonexecutable_tools="$work/nonexecutable"
@@ -23,15 +29,13 @@ mkdir -p "$home" "$fake" "$alternate_tools" "$nonexecutable_tools"
 ln -s "$alternate_tools" "$alternate_link"
 : > "$image"
 HOME="$home" "$installer" >/dev/null
+package_bin=$(realpath "$bin")
 cmp "$repo/nvim/bin/ct_launcher.sh" "$bin/ct_launcher.sh"
-cmp "$repo/container_tools/ct_library.sh" "$bin/ct_library.sh"
-cmp "$repo/container_tools/ct_exec.sh" "$bin/ct_exec.sh"
-cmp "$repo/container_tools/ct_shell.sh" "$bin/ct_shell.sh"
-# shellcheck disable=SC1090 # Exercise the installed resolver copy directly.
+# shellcheck disable=SC1090,SC1091 # Exercise the installed resolver copy directly.
 . "$bin/ct_launcher.sh"
-checkout_shell=$(CT_ROOT="$repo/container_tools" ct_launcher_path ct_shell.sh)
-[[ $checkout_shell == "$(realpath "$repo/container_tools/ct_shell.sh")" ]] || {
-  printf '%s\n' 'CT_ROOT did not resolve the actual container_tools checkout' >&2
+checkout_shell=$(CT_ROOT="$bin" ct_launcher_path ct_shell.sh)
+[[ $checkout_shell == "$package_bin/ct_shell.sh" ]] || {
+  printf '%s\n' 'CT_ROOT did not resolve the installed package bin directory' >&2
   exit 1
 }
 
@@ -62,6 +66,10 @@ write_launcher_stub "$bin/ct_shell.sh" 23
 write_launcher_stub "$bin/ct_exec.sh" 24
 write_launcher_stub "$alternate_tools/ct_shell.sh" 25
 write_launcher_stub "$alternate_tools/ct_exec.sh" 26
+for launcher in container-tools ct_instance_exec.sh ct_mount_detector.sh ct_args.sh; do
+  printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$alternate_tools/$launcher"
+  chmod 755 "$alternate_tools/$launcher"
+done
 printf '%s\n' '#!/usr/bin/env bash' > "$nonexecutable_tools/ct_shell.sh"
 cat > "$fake/opencode" <<'EOF'
 #!/usr/bin/env bash
@@ -93,13 +101,13 @@ mapfile -t argv < "$runtime_log"
 [[ ${argv[0]} == --apptainer \
   && ${argv[1]} == --ct-bind && ${argv[2]} == "$npm_base:/opt/msk/npm-global" \
   && ${argv[3]} == --ct-env && ${argv[4]} == MSK_NPM_GLOBAL_BASE=/opt/msk/npm-global \
-  && ${argv[5]} == --ct-bootstrap && ${argv[6]} == "$bin/mkchad-container-bootstrap" \
+  && ${argv[5]} == --ct-bootstrap && ${argv[6]} == "$package_bin/mkchad-container-bootstrap" \
   && ${argv[7]} == --ct-container-shell && ${argv[8]} == /bin/bash \
   && ${argv[9]} == -- && ${argv[10]} == "$image" ]] || {
   printf '%s\n' 'nvim_shell did not preserve the MkChad image launch contract' >&2
   exit 1
 }
-[[ $(<"$launcher_log") == "$bin/ct_shell.sh" ]] || {
+[[ $(<"$launcher_log") == "$package_bin/ct_shell.sh" ]] || {
   printf '%s\n' 'unset CT_ROOT did not use the installed co-located shell launcher' >&2
   exit 1
 }
@@ -111,7 +119,7 @@ HOME="$home" XDG_DATA_HOME="$home/data" NVIM_CONT_LOCATION="$image" \
   CT_ROOT='' SHELL=/missing/host-shell PATH="$fake:$PATH" "$bin/nvim_shell"
 status=$?
 set -e
-[[ $status -eq 23 && $(<"$launcher_log") == "$bin/ct_shell.sh" ]] || {
+[[ $status -eq 23 && $(<"$launcher_log") == "$package_bin/ct_shell.sh" ]] || {
   printf '%s\n' 'empty CT_ROOT did not use the installed co-located shell launcher' >&2
   exit 1
 }
@@ -146,7 +154,7 @@ set -e
   exit 1
 }
 mapfile -t argv < "$runtime_log"
-[[ ${argv[6]} == "$bin/mkchad-container-bootstrap" ]] || {
+[[ ${argv[6]} == "$package_bin/mkchad-container-bootstrap" ]] || {
   printf '%s\n' 'CT_ROOT redirected the launcher-relative container bootstrap' >&2
   exit 1
 }
@@ -169,7 +177,8 @@ expect_closed_root_failure() {
 
 expect_closed_root_failure relative relative-root 'CT_ROOT must be an absolute path'
 expect_closed_root_failure missing "$work/missing-root" 'CT_ROOT is not an existing directory'
-expect_closed_root_failure nonexecutable "$nonexecutable_tools" 'container tool launcher is not a regular executable'
+expect_closed_root_failure raw-checkout "$repo/container_tools" 'not a complete container-tools package bin directory'
+expect_closed_root_failure nonexecutable "$nonexecutable_tools" 'not a complete container-tools package bin directory'
 
 # Losing the sourced helper must fail closed instead of deriving `.` from an
 # empty realpath result and executing a launcher from the working directory.

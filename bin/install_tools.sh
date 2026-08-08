@@ -1,24 +1,30 @@
 #!/usr/bin/env bash
+# Install or verify one exact container-tools package beneath ${HOME}/.local.
 set -euo pipefail
 umask 077
 
 program=${0##*/}
 script_dir=$(dirname "$(realpath "$0")")
-bin_dir="$script_dir/../container_tools"
-target_dir="$HOME/.local/bin"
+package_installer="$script_dir/../container_tools/scripts/install-package.sh"
 check_only=0
-lock_held=0
 recovery_dir=
-stage=
-recovery_stage=
+archive=
+digest=
+version=
+source_commit=
+architecture=
+libc=
+declare -A seen=()
 
 usage() {
   cat <<EOF
-Usage: $program [--check] [--recovery-dir DIR]
+Usage: $program [--check] [--recovery-dir DIR] --container-tools-archive FILE \
+  --container-tools-sha256 SHA256 --container-tools-version VERSION \
+  --container-tools-source-commit COMMIT --container-tools-architecture ARCH \
+  --container-tools-libc musl|glibc
 
-Install MkChad container-tool launchers. --check validates every source and
-destination without writing. Replacing an existing non-compliant file requires
-a caller-created private recovery directory.
+Install a verified container-tools package into ${HOME}/.local. --check is
+mutation-free; apply and verify are delegated to the package-owned transaction.
 EOF
 }
 
@@ -27,16 +33,9 @@ die() {
   exit 1
 }
 
-cleanup() {
-  [[ -z $stage || ! -e $stage ]] || rm -f -- "$stage"
-  [[ -z $recovery_stage || ! -e $recovery_stage ]] || rm -f -- "$recovery_stage"
-}
-trap cleanup EXIT
-
 check_safe_directory() {
   local path=$1 label=$2 allow_trusted_root=${3:-0} uid mode
-  [[ ! -L $path ]] || die "unsafe parent symlink: $label"
-  [[ -d $path ]] || die "unsafe parent is not a directory: $label"
+  [[ ! -L $path && -d $path ]] || die "unsafe parent is not a directory: $label"
   uid=$(stat -Lc '%u' -- "$path") || die "cannot inspect parent: $label"
   mode=$(stat -Lc '%a' -- "$path") || die "cannot inspect parent mode: $label"
   if (( allow_trusted_root )) && [[ ${MKCHAD_TRUST_GROUP_WRITABLE_ROOTS:-0} == 1 ]]; then
@@ -49,160 +48,65 @@ check_safe_directory() {
 }
 
 validate_target_parents() {
-  local current=$HOME part
-  [[ $HOME == /* ]] || die "HOME must be an absolute path"
-  check_safe_directory "$current" "$current" 1
-  for part in .local bin; do
-    current="$current/$part"
-    [[ ! -e $current && ! -L $current ]] && continue
-    check_safe_directory "$current" "$current"
+  local path
+  check_safe_directory "$HOME" "$HOME" 1
+  for path in "$HOME/.local" "$HOME/.local/bin" "$HOME/.local/share"; do
+    [[ ! -e $path && ! -L $path ]] && continue
+    check_safe_directory "$path" "$path"
   done
 }
 
-ensure_target_dir() {
-  local current=$HOME part
-  validate_target_parents
-  for part in .local bin; do
-    current="$current/$part"
-    if [[ ! -e $current && ! -L $current ]]; then
-      mkdir -m 700 -- "$current"
-    fi
-    check_safe_directory "$current" "$current"
-  done
-}
-
-validate_recovery_dir() {
-  local mode
-  [[ -n $recovery_dir ]] || die "a private --recovery-dir is required before replacing existing files"
-  [[ ! -L $recovery_dir && -d $recovery_dir ]] || die "recovery directory is not a directory: $recovery_dir"
-  check_safe_directory "$recovery_dir" "$recovery_dir"
-  mode=$(stat -Lc '%a' -- "$recovery_dir") || die "cannot inspect recovery directory mode: $recovery_dir"
-  [[ $mode == 700 ]] || die "recovery directory must have mode 0700: $recovery_dir"
-}
-
-validate_source() {
-  local source=$1
-  [[ ! -L $source && -f $source ]] || die "source is not a regular file: $source"
-}
-
-validate_output() {
-  local output=$1 uid
-  [[ ! -L $output ]] || die "symlink output is unsafe: $output"
-  [[ ! -e $output ]] && return
-  [[ -f $output ]] || die "non-regular output is unsafe: $output"
-  uid=$(stat -Lc '%u' -- "$output") || die "cannot inspect output: $output"
-  [[ $uid == "$EUID" ]] || die "foreign-owned output is unsafe: $output"
-}
-
-output_is_compliant() {
-  local source=$1 output=$2 mode
-  validate_output "$output"
-  [[ -f $output ]] || return 1
-  mode=$(stat -Lc '%a' -- "$output") || die "cannot inspect output mode: $output"
-  [[ $mode == 755 ]] && cmp -s -- "$source" "$output"
-}
-
-output_identity() {
-  local output=$1
-  if [[ ! -e $output && ! -L $output ]]; then
-    printf '%s\n' absent
-    return
-  fi
-  validate_output "$output"
-  stat -Lc '%d:%i' -- "$output" || die "cannot inspect output identity: $output"
-}
-
-files=("$bin_dir"/*.sh)
-
-preflight() {
-  local source output needs_recovery=0
-  validate_target_parents
-  for source in "${files[@]}"; do
-    validate_source "$source"
-    output="$target_dir/${source##*/}"
-    validate_output "$output"
-    if [[ -f $output ]] && ! output_is_compliant "$source" "$output"; then
-      needs_recovery=1
-    fi
-  done
-  if (( ! check_only && needs_recovery )) || [[ -n $recovery_dir ]]; then
-    validate_recovery_dir
-  fi
-}
-
-backup_output() {
-  local output=$1 name=${1##*/} backup
-  [[ -f $output ]] || return 0
-  validate_recovery_dir
-  backup="$recovery_dir/$name"
-  [[ ! -e $backup && ! -L $backup ]] || die "recovery asset already exists: $backup"
-  recovery_stage=$(mktemp "$recovery_dir/.${name}.XXXXXX")
-  cp -- "$output" "$recovery_stage"
-  chmod 600 -- "$recovery_stage"
-  sync -- "$recovery_stage"
-  mv -T -- "$recovery_stage" "$backup"
-  recovery_stage=
-  sync -- "$recovery_dir"
-}
-
-install_file() {
-  local source=$1 output="$target_dir/${1##*/}" expected_output_identity target_identity
-  output_is_compliant "$source" "$output" && return
-  check_safe_directory "$target_dir" "$target_dir"
-  target_identity=$(stat -Lc '%d:%i' -- "$target_dir") || die "cannot inspect target directory: $target_dir"
-  expected_output_identity=$(output_identity "$output")
-  backup_output "$output"
-  stage=$(mktemp "$target_dir/.${source##*/}.XXXXXX")
-  cp -- "$source" "$stage"
-  chmod 755 -- "$stage"
-  cmp -s -- "$source" "$stage" || die "staged file does not match source: $source"
-  sync -- "$stage"
-  [[ $(stat -Lc '%d:%i' -- "$target_dir") == "$target_identity" ]] || die "target directory changed during installation: $target_dir"
-  [[ $(output_identity "$output") == "$expected_output_identity" ]] || die "output changed during installation: $output"
-  mv -fT -- "$stage" "$output"
-  stage=
-  sync -- "$output"
-  sync -- "$target_dir"
-}
-
-acquire_lock() {
-  local lock="$target_dir/.install_nvim.lock" uid
-  [[ ! -L $lock ]] || die "unsafe installer lock symlink: $lock"
-  if [[ -e $lock ]]; then
-    [[ -f $lock ]] || die "unsafe installer lock type: $lock"
-    uid=$(stat -Lc '%u' -- "$lock") || die "cannot inspect installer lock: $lock"
-    [[ $uid == "$EUID" ]] || die "foreign-owned installer lock: $lock"
-  fi
-  exec 9>>"$lock"
-  flock -x 9
+set_once() {
+  local key=$1 value=$2
+  [[ -z ${seen[$key]:-} ]] || die "duplicate container-tools package field: $key"
+  seen[$key]=1
+  printf -v "$key" '%s' "$value"
 }
 
 while (($#)); do
-  case "$1" in
-    --check) check_only=1; shift ;;
-    --recovery-dir)
-      (($# >= 2)) || die "--recovery-dir requires a path"
-      recovery_dir=$2
-      shift 2
-      ;;
-    --lock-held) lock_held=1; shift ;;
-    -h | --help) usage; exit 0 ;;
+  case $1 in
+    --check) (( check_only == 0 )) || die 'duplicate --check'; check_only=1; shift ;;
+    --recovery-dir) (($# >= 2)) || die '--recovery-dir requires a path'; set_once recovery_dir "$2"; shift 2 ;;
+    --container-tools-archive) (($# >= 2)) || die '--container-tools-archive requires a path'; set_once archive "$2"; shift 2 ;;
+    --container-tools-sha256) (($# >= 2)) || die '--container-tools-sha256 requires a value'; set_once digest "$2"; shift 2 ;;
+    --container-tools-version) (($# >= 2)) || die '--container-tools-version requires a value'; set_once version "$2"; shift 2 ;;
+    --container-tools-source-commit) (($# >= 2)) || die '--container-tools-source-commit requires a value'; set_once source_commit "$2"; shift 2 ;;
+    --container-tools-architecture) (($# >= 2)) || die '--container-tools-architecture requires a value'; set_once architecture "$2"; shift 2 ;;
+    --container-tools-libc) (($# >= 2)) || die '--container-tools-libc requires a value'; set_once libc "$2"; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
     *) die "unknown option: $1" ;;
   esac
 done
 
-case ${MKCHAD_TRUST_GROUP_WRITABLE_ROOTS:-0} in
-  0 | 1) ;;
-  *) die "MKCHAD_TRUST_GROUP_WRITABLE_ROOTS must be 0 or 1" ;;
-esac
-
-preflight
-(( check_only )) && exit 0
-ensure_target_dir
-if (( ! lock_held )); then
-  acquire_lock
+if [[ -z $archive && -z $digest && -z $version && -z $source_commit &&
+      -z $architecture && -z $libc ]]; then
+  archive=${CONTAINER_TOOLS_HOST_PACKAGE_ARCHIVE:-}
+  digest=${CONTAINER_TOOLS_HOST_PACKAGE_SHA256:-}
+  version=${CONTAINER_TOOLS_HOST_PACKAGE_VERSION:-}
+  source_commit=${CONTAINER_TOOLS_HOST_PACKAGE_SOURCE_COMMIT:-}
+  architecture=${CONTAINER_TOOLS_HOST_PACKAGE_ARCHITECTURE:-}
+  libc=${CONTAINER_TOOLS_HOST_PACKAGE_LIBC:-}
 fi
-preflight
-for source in "${files[@]}"; do
-  install_file "$source"
-done
+[[ -x $package_installer && -n $archive && -n $digest && -n $version &&
+   -n $source_commit && -n $architecture && -n $libc ]] ||
+  die 'complete container-tools package identity is required'
+[[ $HOME == /* ]] || die 'HOME must be an absolute path'
+case ${MKCHAD_TRUST_GROUP_WRITABLE_ROOTS:-0} in
+  0|1) ;;
+  *) die 'MKCHAD_TRUST_GROUP_WRITABLE_ROOTS must be 0 or 1' ;;
+esac
+validate_target_parents
+
+package_args=(--archive "$archive" --sha256 "$digest" --version "$version" \
+  --source-commit "$source_commit" --architecture "$architecture" --libc "$libc")
+if (( check_only )); then
+  [[ -z $recovery_dir ]] || die '--recovery-dir is not valid with --check'
+  exec "$package_installer" --check "${package_args[@]}"
+fi
+if [[ -z $recovery_dir ]]; then
+  recovery_dir="$HOME/.local/.container-tools-recovery"
+fi
+[[ $recovery_dir == /* ]] || die '--recovery-dir must be absolute'
+"$package_installer" --apply "${package_args[@]}" --prefix "$HOME/.local" \
+  --recovery-dir "$recovery_dir/container-tools"
+exec "$package_installer" --verify "${package_args[@]}" --prefix "$HOME/.local"

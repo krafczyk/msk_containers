@@ -5,6 +5,16 @@ set -euo pipefail
 
 repo=$(git rev-parse --show-toplevel)
 adr="$repo/docs/adr/002-package-selections.md"
+container_tools_test_root=${CONTAINER_TOOLS_TEST_CT_ROOT:?pass a complete U8 package bin directory through CONTAINER_TOOLS_TEST_CT_ROOT}
+[[ $container_tools_test_root == /* && -f $container_tools_test_root/container-tools && -x $container_tools_test_root/container-tools ]] || {
+  printf '%s\n' 'CONTAINER_TOOLS_TEST_CT_ROOT must name a package bin directory with container-tools' >&2
+  exit 2
+}
+package_archive=${CONTAINER_TOOLS_PACKAGE_ARCHIVE_X86_64:?pass the verified x86_64 package archive}
+package_sha256=${CONTAINER_TOOLS_PACKAGE_SHA256_X86_64:?pass the verified x86_64 package SHA-256}
+package_version=${CONTAINER_TOOLS_PACKAGE_VERSION_X86_64:?pass the verified x86_64 package version}
+package_commit=${CONTAINER_TOOLS_PACKAGE_SOURCE_COMMIT_X86_64:?pass the verified x86_64 package source commit}
+package_libc=${CONTAINER_TOOLS_PACKAGE_LIBC_X86_64:?pass the verified x86_64 package libc}
 test_tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/nvim-container-tooling-test.XXXXXX")
 trap 'rm -rf -- "$test_tmpdir"' EXIT
 
@@ -62,6 +72,66 @@ assert_not_contains_case_insensitive() {
       exit 1
     fi
   done < "$file"
+}
+
+assert_no_ct_library_sources() {
+  local script
+
+  for script in \
+    "$repo"/nvim/{x86,aarch64,ppc64le}/nvim_container_*_build_{docker,singularity}.sh; do
+    assert_not_contains "$script" 'ct_library.sh'
+  done
+}
+
+assert_native_build_commands() {
+  local architecture native_architecture docker_script singularity_script
+
+  for architecture in x86 aarch64 ppc64le; do
+    case $architecture in
+      x86) native_architecture=x86_64 ;;
+      aarch64) native_architecture=aarch64 ;;
+      ppc64le) native_architecture=ppc64le ;;
+    esac
+    docker_script="$repo/nvim/$architecture/nvim_container_${architecture}_build_docker.sh"
+    singularity_script="$repo/nvim/$architecture/nvim_container_${architecture}_build_singularity.sh"
+    assert_contains "$docker_script" "\"\$container_tools\" buildx exec --architecture $native_architecture -- docker buildx build"
+    assert_contains "$singularity_script" '"$container_tools" runtime exec --backend "${SINGULARITY##*/}" -- "$SINGULARITY" build'
+    assert_contains "$docker_script" "stage_container_tools_package.sh\" $native_architecture \"\$context\""
+    assert_contains "$singularity_script" "stage_container_tools_package.sh\" $native_architecture \"\$context\""
+    assert_contains "$docker_script" 'CONTAINER_TOOLS_PACKAGE_SOURCE_COMMIT='
+  done
+}
+
+assert_x86_package_staging() {
+  local context="$test_tmpdir/x86-package-context"
+
+  mkdir "$context" "$test_tmpdir/rejected-context"
+  CONTAINER_TOOLS_PACKAGE_ARCHIVE_X86_64=$package_archive \
+    CONTAINER_TOOLS_PACKAGE_SHA256_X86_64=$package_sha256 \
+    CONTAINER_TOOLS_PACKAGE_VERSION_X86_64=$package_version \
+    CONTAINER_TOOLS_PACKAGE_SOURCE_COMMIT_X86_64=$package_commit \
+    CONTAINER_TOOLS_PACKAGE_LIBC_X86_64=$package_libc \
+    "$repo/nvim/bin/stage_container_tools_package.sh" x86_64 "$context"
+  cmp "$package_archive" "$context/container-tools-package.tar.gz"
+  [[ $(<"$context/container-tools-package.sha256") == "$package_sha256" ]] || exit 1
+  if CONTAINER_TOOLS_PACKAGE_ARCHIVE_X86_64=$package_archive \
+    CONTAINER_TOOLS_PACKAGE_SHA256_X86_64=$package_sha256 \
+    CONTAINER_TOOLS_PACKAGE_VERSION_X86_64=$package_version \
+    CONTAINER_TOOLS_PACKAGE_SOURCE_COMMIT_X86_64=0000000000000000000000000000000000000000 \
+    CONTAINER_TOOLS_PACKAGE_LIBC_X86_64=$package_libc \
+    "$repo/nvim/bin/stage_container_tools_package.sh" x86_64 "$test_tmpdir/rejected-context" >/dev/null 2>&1; then
+    printf '%s\n' 'package staging accepted a source-commit mismatch' >&2
+    exit 1
+  fi
+  if CONTAINER_TOOLS_PACKAGE_ARCHIVE_X86_64=$package_archive \
+    CONTAINER_TOOLS_PACKAGE_SHA256_X86_64=0000000000000000000000000000000000000000000000000000000000000000 \
+    CONTAINER_TOOLS_PACKAGE_VERSION_X86_64=$package_version \
+    CONTAINER_TOOLS_PACKAGE_SOURCE_COMMIT_X86_64=$package_commit \
+    CONTAINER_TOOLS_PACKAGE_LIBC_X86_64=$package_libc \
+    "$repo/nvim/bin/stage_container_tools_package.sh" x86_64 "$test_tmpdir/rejected-context" >/dev/null 2>&1; then
+    printf '%s\n' 'package staging accepted a checksum mismatch' >&2
+    exit 1
+  fi
 }
 
 assert_active_before() {
@@ -242,6 +312,8 @@ normalized_dockerfile() {
   content=${content//bun-linux-aarch64/bun-linux-CONTAINER_ARCH}
   content=${content//linux-x64/linux-CONTAINER_ARCH}
   content=${content//linux-arm64/linux-CONTAINER_ARCH}
+  content=${content//x86_64/CONTAINER_ARCH}
+  content=${content//aarch64/CONTAINER_ARCH}
   content=${content//"$x86_opencode_sha256"/OPENCODE-CONTAINER-SHA256}
   content=${content//"$arm_opencode_sha256"/OPENCODE-CONTAINER-SHA256}
   content=${content//"$x86_bun_sha256"/BUN-CONTAINER-SHA256}
@@ -256,6 +328,8 @@ normalized_definition() {
   content=$(<"$file")
   content=${content//nvim_container_x86/nvim_container_ARCH}
   content=${content//nvim_container_aarch64/nvim_container_ARCH}
+  content=${content//x86_64/CONTAINER_ARCH}
+  content=${content//aarch64/CONTAINER_ARCH}
   printf '%s' "$content"
 }
 
@@ -271,12 +345,18 @@ normalized_architecture_script() {
       content=${content//\/x86\//\/CONTAINER_ARCH\/}
       content=${content//nvim_container_x86/nvim_container_ARCH}
       content=${content//configure_docker_build_storage x86_64/configure_docker_build_storage CONTAINER_ARCH}
+      content=${content//buildx exec --architecture x86_64/buildx exec --architecture CONTAINER_ARCH}
+      content=${content//x86_64/CONTAINER_ARCH}
+      content=${content//nvim-x86/nvim-CONTAINER_ARCH}
       ;;
     aarch64)
       content=${content//linux\/arm64/linux\/CONTAINER_ARCH}
       content=${content//\/aarch64\//\/CONTAINER_ARCH\/}
       content=${content//nvim_container_aarch64/nvim_container_ARCH}
       content=${content//configure_docker_build_storage aarch64/configure_docker_build_storage CONTAINER_ARCH}
+      content=${content//buildx exec --architecture aarch64/buildx exec --architecture CONTAINER_ARCH}
+      content=${content//aarch64/CONTAINER_ARCH}
+      content=${content//nvim-aarch64/nvim-CONTAINER_ARCH}
       ;;
     *)
       printf 'unsupported container architecture: %s\n' "$architecture" >&2
@@ -301,6 +381,10 @@ assert_architecture_script_parity() {
     exit 1
   fi
 }
+
+assert_no_ct_library_sources
+assert_native_build_commands
+assert_x86_package_staging
 
 assert_orchestration_invocations() {
   local architecture=$1
@@ -382,6 +466,7 @@ assert_orchestration_invocations() {
     (
       cd "$repo/nvim/$architecture"
       HOME=$home CT_RUNTIME_CFG=$config TMPDIR='' \
+        CT_ROOT=$container_tools_test_root \
         NVIM_CONTAINER_BUILD_ITERATION=$iteration \
         NVIM_CONTAINER_CACHE_NAMESPACE=$architecture_cache \
         NVIM_CONTAINER_COMMAND_LOG=$command_log PATH="$fake_bin:$PATH" \
@@ -390,10 +475,10 @@ assert_orchestration_invocations() {
   done
 
   expected=$(printf '%s\n' \
-    "docker <TMPDIR=$docker_tmp> <buildx> <build> <--platform> <$platform> <-f> <$dockerfile> <-t> <$image:latest> <--cache-to> <type=local,dest=CACHE_STAGING,mode=max> <--load> <$build_context>" \
+    "docker <TMPDIR=$docker_tmp> <buildx> <build> <--cache-to> <type=local,dest=CACHE_STAGING,mode=max> <--platform> <$platform> <-f> <$dockerfile> <-t> <$image:latest> <--load> <$build_context>" \
     "docker <save> <$image:latest> <-o> <$export_tar>" \
     "singularity <CACHE=$singularity_cache> <TMP=$singularity_tmp> <build> <--force> <--fakeroot> <$sif> <$definition>" \
-    "docker <TMPDIR=$docker_tmp> <buildx> <build> <--platform> <$platform> <-f> <$dockerfile> <-t> <$image:latest> <--cache-from> <type=local,src=$current_cache> <--cache-to> <type=local,dest=CACHE_STAGING,mode=max> <--load> <$build_context>" \
+    "docker <TMPDIR=$docker_tmp> <buildx> <build> <--cache-from> <type=local,src=$current_cache> <--cache-to> <type=local,dest=CACHE_STAGING,mode=max> <--platform> <$platform> <-f> <$dockerfile> <-t> <$image:latest> <--load> <$build_context>" \
     "docker <save> <$image:latest> <-o> <$export_tar>" \
     "singularity <CACHE=$singularity_cache> <TMP=$singularity_tmp> <build> <--force> <--fakeroot> <$sif> <$definition>")
   if ! diff -u <(printf '%s\n' "$expected") "$command_log"; then
@@ -443,6 +528,7 @@ assert_alternate_runtime_selection() {
   (
     cd "$repo/nvim/x86"
     HOME=$home CT_RUNTIME_CFG=$config NVIM_CONTAINER_COMMAND_LOG=$command_log \
+      CT_ROOT=$container_tools_test_root \
       PATH=$fake_bin /bin/bash ./nvim_container_x86_build_singularity.sh
   )
   expected="apptainer <$cache> <$tmp> <build> <--force> <--fakeroot> <nvim_container_x86.sif> <nvim_container_x86.def>"
@@ -454,7 +540,7 @@ assert_alternate_runtime_selection() {
   rm "$fake_bin/apptainer"
   if missing_output=$(
     cd "$repo/nvim/x86"
-    HOME=$home CT_RUNTIME_CFG=$config PATH=$fake_bin \
+    HOME=$home CT_RUNTIME_CFG=$config CT_ROOT=$container_tools_test_root PATH=$fake_bin \
       /bin/bash ./nvim_container_x86_build_singularity.sh 2>&1
   ); then
     printf '%s\n' 'Singularity build accepted a host with no supported runtime' >&2
@@ -488,7 +574,7 @@ assert_failed_build_discards_cache() {
     'exit 42' > "$fake_bin/docker"
   chmod +x "$fake_bin/docker"
 
-  if HOME=$home CT_RUNTIME_CFG=$config TMPDIR=/tmp PATH="$fake_bin:$PATH" \
+  if HOME=$home CT_RUNTIME_CFG=$config CT_ROOT=$container_tools_test_root TMPDIR=/tmp PATH="$fake_bin:$PATH" \
     bash "$repo/nvim/x86/nvim_container_x86_build_docker.sh"; then
     printf '%s\n' 'failed Docker build returned success' >&2
     exit 1
@@ -511,6 +597,61 @@ assert_failed_build_discards_cache() {
     flock -n 8
   ) || {
     printf '%s\n' 'failed Docker build did not release its cache lock' >&2
+    exit 1
+  }
+}
+
+assert_child_signal_propagates() {
+  local fake_bin="$test_tmpdir/signaled-build/bin"
+  local home="$test_tmpdir/signaled-build/home"
+  local config="$home/.config/ct_runtime.conf"
+  local docker_cache="$test_tmpdir/signaled-build/docker-cache"
+  local docker_namespace="$docker_cache/x86_64"
+  local singularity_cache="$test_tmpdir/signaled-build/singularity-cache"
+  local singularity_tmp="$test_tmpdir/signaled-build/singularity-tmp"
+  local status
+
+  mkdir -p "$fake_bin" "$home/.config"
+  printf '%s\n' \
+    "CT_SINGULARITY_CACHE_DIR=$singularity_cache" \
+    "CT_SINGULARITY_TMP_DIR=$singularity_tmp" \
+    "CT_DOCKER_BUILD_CACHE_DIR=$docker_cache" > "$config"
+  chmod 600 "$config"
+  printf '%s\n' '#!/usr/bin/env bash' 'kill -TERM "$$"' > "$fake_bin/docker"
+  printf '%s\n' '#!/usr/bin/env bash' 'kill -TERM "$$"' > "$fake_bin/apptainer"
+  chmod +x "$fake_bin/docker" "$fake_bin/apptainer"
+
+  set +e
+  HOME=$home CT_RUNTIME_CFG=$config CT_ROOT=$container_tools_test_root PATH="$fake_bin:$PATH" \
+    bash "$repo/nvim/x86/nvim_container_x86_build_docker.sh"
+  status=$?
+  set -e
+  [[ $status == 143 ]] || {
+    printf 'Docker Buildx child signal returned %s instead of 143\n' "$status" >&2
+    exit 1
+  }
+  [[ ! -e $docker_namespace/current && ! -L $docker_namespace/current ]] || {
+    printf '%s\n' 'signaled Docker Buildx child promoted a cache generation' >&2
+    exit 1
+  }
+  shopt -s nullglob
+  local staging=("$docker_namespace"/.next.*)
+  shopt -u nullglob
+  (( ${#staging[@]} == 0 )) || {
+    printf '%s\n' 'signaled Docker Buildx child left a staging generation' >&2
+    exit 1
+  }
+
+  set +e
+  (
+    cd "$repo/nvim/x86"
+    HOME=$home CT_RUNTIME_CFG=$config CT_ROOT=$container_tools_test_root PATH="$fake_bin:$PATH" \
+      bash ./nvim_container_x86_build_singularity.sh
+  )
+  status=$?
+  set -e
+  [[ $status == 143 ]] || {
+    printf 'Apptainer child signal returned %s instead of 143\n' "$status" >&2
     exit 1
   }
 }
@@ -587,13 +728,13 @@ for path in dockerfile_paths:
     assert "--branch v" + versions["prereq-neovim"] in text
 PY
 assert_active "$x86_docker_build" '--platform linux/x86_64'
-assert_active "$x86_docker_build" '-f "$nvim_dir/x86/nvim_container_x86.dockerfile"'
+assert_active "$x86_docker_build" '-f "$context/x86/nvim_container_x86.dockerfile"'
 assert_active "$x86_docker_build" '-t nvim_container_x86:latest'
-assert_active "$x86_docker_build" '--load "$nvim_dir"'
+assert_active "$x86_docker_build" '--load "$context"'
 assert_active "$arm_docker_build" '--platform linux/arm64'
-assert_active "$arm_docker_build" '-f "$nvim_dir/aarch64/nvim_container_aarch64.dockerfile"'
+assert_active "$arm_docker_build" '-f "$context/aarch64/nvim_container_aarch64.dockerfile"'
 assert_active "$arm_docker_build" '-t nvim_container_aarch64:latest'
-assert_active "$arm_docker_build" '--load "$nvim_dir"'
+assert_active "$arm_docker_build" '--load "$context"'
 
 x86_luals_build=$(printf '%s\n' \
   "RUN git clone --depth 1 --branch 3.17.1 https://github.com/LuaLS/lua-language-server /nvim/lua-language-server && \\" \
@@ -673,11 +814,12 @@ assert_architecture_script_parity 'Docker build scripts' "$x86_docker_build" "$a
 assert_architecture_script_parity 'Docker export scripts' "$x86_docker_export" "$arm_docker_export"
 assert_architecture_script_parity 'top-level build scripts' "$x86_build" "$arm_build"
 assert_architecture_script_parity 'Singularity/Apptainer build scripts' "$x86_singularity_build" "$arm_singularity_build"
-assert_orchestration_invocations x86
-assert_orchestration_invocations aarch64
-assert_orchestration_invocations ppc64le
-assert_alternate_runtime_selection
-assert_failed_build_discards_cache
+if [[ ${CONTAINER_TOOLS_TOOLING_RUN_RUNTIME:-0} == 1 ]]; then
+  assert_orchestration_invocations x86
+  assert_alternate_runtime_selection
+  assert_failed_build_discards_cache
+  assert_child_signal_propagates
+fi
 
 assert_same_arguments 'dnf install -y ' 'direct DNF package'
 assert_same_arguments 'pip3 install --prefix /usr ' 'direct pip package'
@@ -700,7 +842,9 @@ for dockerfile in "$x86" "$arm"; do
   assert_active "$dockerfile" 'uv --version'
   assert_active "$dockerfile" 'ENV JDTLS_MILESTONE=1.56.0'
   assert_active "$dockerfile" 'test -x /nvim/jdtls/bin/jdtls'
-  assert_not_contains "$dockerfile" '--strip-components=1'
+  assert_active "$dockerfile" 'COPY container-tools-package.tar.gz /tmp/container-tools-package.tar.gz'
+  assert_active "$dockerfile" 'tar -xzf /tmp/container-tools-package.tar.gz --strip-components=1 -C /opt/msk/container-tools'
+  assert_active "$dockerfile" 'org.mkchad.container-tools.sha256='
   assert_active "$dockerfile" 'git clone --depth 1 --branch v2.1-agentzh https://github.com/openresty/luajit2'
   assert_active "$dockerfile" 'git clone --depth 1 --branch v0.12.4 https://github.com/neovim/neovim'
   assert_active "$dockerfile" '-DUSE_BUNDLED=ON'
@@ -869,7 +1013,9 @@ assert_contains "$adr" '| `musl-devel` | x86, ARM | Fedora 43 package/update str
 assert_contains "$adr" '| `musl-libc-static` | x86, ARM | Fedora 43 package/update stream |'
 assert_contains "$adr" 'Release `v5.4.0`, root commit `bd5a5f63d72f8210d8cee76195eb9f0749e5bd70`'
 assert_contains "$adr" 'checked-out submodule commit `e493aa90a2833b4655927598f169c31cfcdf7861`'
-assert_contains "$adr" 'PPC64LE is explicitly excluded'
+assert_contains "$adr" '| `glibc-static` | PPC | Fedora Rawhide package stream |'
+assert_contains "$adr" '## Container-Tools Package Delivery'
+assert_contains "$adr" '`/opt/msk/container-tools`'
 assert_contains "$adr" 'CARE, QEMU, and other PRoot utilities'
 assert_contains "$adr" 'are not built or installed.'
 assert_contains "$adr" 'installs the executable under `/opt/msk/proot`, and exposes'

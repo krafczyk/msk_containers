@@ -25,6 +25,12 @@ installed_mkchad="$bin/mkchad"
 mount_config="$work/ct_mount.conf"
 repo=${wrapper%/nvim/bin/mkchad-opencode-server}
 installer="$repo/bin/install_nvim.sh"
+export CONTAINER_TOOLS_HOST_PACKAGE_ARCHIVE=${CONTAINER_TOOLS_HOST_PACKAGE_ARCHIVE:?pass the verified host package archive}
+export CONTAINER_TOOLS_HOST_PACKAGE_SHA256=${CONTAINER_TOOLS_HOST_PACKAGE_SHA256:?pass the host package SHA-256}
+export CONTAINER_TOOLS_HOST_PACKAGE_VERSION=${CONTAINER_TOOLS_HOST_PACKAGE_VERSION:?pass the host package version}
+export CONTAINER_TOOLS_HOST_PACKAGE_SOURCE_COMMIT=${CONTAINER_TOOLS_HOST_PACKAGE_SOURCE_COMMIT:?pass the host package source commit}
+export CONTAINER_TOOLS_HOST_PACKAGE_ARCHITECTURE=${CONTAINER_TOOLS_HOST_PACKAGE_ARCHITECTURE:?pass the host package architecture}
+export CONTAINER_TOOLS_HOST_PACKAGE_LIBC=${CONTAINER_TOOLS_HOST_PACKAGE_LIBC:?pass the host package libc}
 alternate_tools="$work/alternate/container_tools"
 alternate_link="$work/alternate-link"
 mkdir -p "$home" "$config/mkchad/lua/mkchad/opencode" "$fake" "$container_dir" "$alternate_tools"
@@ -36,6 +42,7 @@ chmod 600 "$image_target"
 ln -s "${image_target##*/}" "$image"
 : > "$mount_config"
 HOME="$home" "$installer" >/dev/null
+package_bin=$(realpath "$bin")
 
 cat > "$fake/apptainer" <<'EOF'
 #!/usr/bin/env bash
@@ -70,6 +77,10 @@ env "${container_env[@]}" SINGULARITY_CONTAINER="$image" "$@"
 EOF
 cp "$bin/ct_instance_exec.sh" "$alternate_tools/ct_instance_exec.sh"
 cp "$bin/ct_exec.sh" "$alternate_tools/ct_exec.sh"
+for launcher in container-tools ct_shell.sh ct_mount_detector.sh ct_args.sh; do
+  printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$alternate_tools/$launcher"
+  chmod 755 "$alternate_tools/$launcher"
+done
 cat > "$fake/nvim" <<'EOF'
 #!/usr/bin/env bash
 log=${MKCHAD_TEST_NVIM_LOG:-"${XDG_CONFIG_HOME%/*}/nvim.log"}
@@ -113,7 +124,7 @@ env -u SINGULARITY_CONTAINER -u APPTAINER_CONTAINER -u XDG_STATE_HOME -u CT_ROOT
 host_status=$?
 set -e
 [[ $host_status -eq 19 ]] || { printf '%s\n' 'status did not use the foreground container executor' >&2; exit 1; }
-[[ $(<"$launcher_log") == "ct_exec:$bin/ct_exec.sh" ]] || {
+[[ $(<"$launcher_log") == "ct_exec:$package_bin/ct_exec.sh" ]] || {
   printf '%s\n' 'unset CT_ROOT did not use the installed co-located foreground launcher' >&2; exit 1;
 }
 mapfile -t runtime_argv < "$status_log"
@@ -126,10 +137,10 @@ mapfile -t runtime_argv < "$status_log"
   && ${runtime_argv[11]} == --ct-env && ${runtime_argv[12]} == "XDG_CACHE_HOME=$home/.local/cache" \
   && ${runtime_argv[13]} == --ct-env && ${runtime_argv[14]} == "XDG_DATA_HOME=$home/.local/share" \
   && ${runtime_argv[15]} == --ct-env && ${runtime_argv[16]} == MSK_NPM_GLOBAL_BASE=/opt/msk/npm-global \
-  && ${runtime_argv[17]} == --ct-bootstrap && ${runtime_argv[18]} == "$bin/mkchad-container-bootstrap" \
+  && ${runtime_argv[17]} == --ct-bootstrap && ${runtime_argv[18]} == "$package_bin/mkchad-container-bootstrap" \
   && ${runtime_argv[19]} == -- && ${runtime_argv[20]} == "$image" \
   && ${runtime_argv[21]} == /usr/bin/env && ${runtime_argv[22]} == HOME=/nonexistent \
-  && ${runtime_argv[23]} == "$installed_image_command" && ${runtime_argv[24]} == status \
+  && ${runtime_argv[23]} == "$package_bin/mkchad-opencode-server-image" && ${runtime_argv[24]} == status \
   && ${runtime_argv[25]} == --json && ${runtime_argv[26]} == --host-evidence-v1 ]] || {
   printf '%s\n' 'status foreground transport argv changed' >&2; exit 1;
 }
@@ -165,7 +176,7 @@ set -e
   printf '%s\n' 'status did not use the canonical checkout-shaped CT_ROOT' >&2; exit 1;
 }
 mapfile -t alternate_status_argv < "$status_log"
-[[ ${alternate_status_argv[18]} == "$bin/mkchad-container-bootstrap" ]] || {
+[[ ${alternate_status_argv[18]} == "$package_bin/mkchad-container-bootstrap" ]] || {
   printf '%s\n' 'CT_ROOT redirected the launcher-relative server bootstrap' >&2; exit 1;
 }
 
@@ -368,7 +379,7 @@ mapfile -t mkchad_runtime_argv < "$runtime_log"
   && ${mkchad_runtime_argv[5]} == --ct-env \
   && ${mkchad_runtime_argv[6]} == MKCHAD_PERSISTENT_INSTANCE=1 \
   && ${mkchad_runtime_argv[19]} == --ct-bootstrap \
-  && ${mkchad_runtime_argv[20]} == "$bin/mkchad-container-bootstrap" \
+  && ${mkchad_runtime_argv[20]} == "$package_bin/mkchad-container-bootstrap" \
   && ${mkchad_runtime_argv[21]} == -- \
   && ${mkchad_runtime_argv[22]} == "$image" \
   && ${mkchad_runtime_argv[23]} == nvim \

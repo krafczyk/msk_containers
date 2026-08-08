@@ -12,6 +12,12 @@ work=${1:?pass a new task-specific directory beneath /tmp/mkchad-v1}
 }
 
 repo=$(git rev-parse --show-toplevel)
+export CONTAINER_TOOLS_HOST_PACKAGE_ARCHIVE=${CONTAINER_TOOLS_HOST_PACKAGE_ARCHIVE:?pass the verified host package archive}
+export CONTAINER_TOOLS_HOST_PACKAGE_SHA256=${CONTAINER_TOOLS_HOST_PACKAGE_SHA256:?pass the host package SHA-256}
+export CONTAINER_TOOLS_HOST_PACKAGE_VERSION=${CONTAINER_TOOLS_HOST_PACKAGE_VERSION:?pass the host package version}
+export CONTAINER_TOOLS_HOST_PACKAGE_SOURCE_COMMIT=${CONTAINER_TOOLS_HOST_PACKAGE_SOURCE_COMMIT:?pass the host package source commit}
+export CONTAINER_TOOLS_HOST_PACKAGE_ARCHITECTURE=${CONTAINER_TOOLS_HOST_PACKAGE_ARCHITECTURE:?pass the host package architecture}
+export CONTAINER_TOOLS_HOST_PACKAGE_LIBC=${CONTAINER_TOOLS_HOST_PACKAGE_LIBC:?pass the host package libc}
 fixture="$work/fixture"
 home="$work/home"
 recovery="$work/recovery"
@@ -67,16 +73,11 @@ HOME="$home" bash "$installer" >/dev/null
 }
 
 printf '%s\n' '# updated launcher fixture' >> "$fixture/nvim/bin/nvim"
-printf '%s\n' '# updated tool fixture' >> "$fixture/container_tools/ct_exec.sh"
 cp -- "$target/nvim" "$work/nvim-before"
 cp -- "$target/ct_exec.sh" "$work/ct-exec-before"
 HOME="$home" bash "$installer" --check >/dev/null
 cmp "$work/nvim-before" "$target/nvim" || {
   printf '%s\n' '--check rewrote a noncompliant launcher' >&2
-  exit 1
-}
-cmp "$work/ct-exec-before" "$target/ct_exec.sh" || {
-  printf '%s\n' '--check rewrote a noncompliant container tool' >&2
   exit 1
 }
 rm "$target/mkchad-opencode-server"
@@ -98,10 +99,6 @@ rmdir "$target/mkchad-opencode-server"
 HOME="$home" bash "$installer" --recovery-dir "$recovery" >/dev/null
 cmp "$work/nvim-before" "$recovery/nvim" || {
   printf '%s\n' 'replacement did not retain prior launcher bytes' >&2
-  exit 1
-}
-cmp "$work/ct-exec-before" "$recovery/ct_exec.sh" || {
-  printf '%s\n' 'replacement did not retain prior container-tool bytes' >&2
   exit 1
 }
 
@@ -216,7 +213,7 @@ printf '%s\n' '# concurrent fixture update' >> "$fixture/nvim/bin/nvim"
 cp -- "$target/nvim" "$work/nvim-before-concurrent"
 mkdir "$work/recovery-concurrent"
 chmod 700 "$work/recovery-concurrent"
-lock="$target/.install_nvim.lock"
+lock="$home/.local/.install_nvim.lock"
 (
   exec 9>>"$lock"
   flock -x 9
@@ -258,5 +255,7 @@ cmp "$work/nvim-before-interruption" "$work/recovery-interruption/nvim" || {
   printf '%s\n' 'interrupted replacement did not retain recovery bytes' >&2
   exit 1
 }
+HOME="$home" bash "$installer" --recovery-dir "$work/recovery-interruption" >/dev/null
+HOME="$home" bash "$installer" --check >/dev/null
 
 printf '%s\n' 'install_nvim tests passed'

@@ -12,10 +12,14 @@ check_only=0
 recovery_dir=
 stage=
 recovery_stage=
+package_args=()
 
 usage() {
   cat <<EOF
-Usage: $program [--check] [--recovery-dir DIR]
+Usage: $program [--check] [--recovery-dir DIR] --container-tools-archive FILE \
+  --container-tools-sha256 SHA256 --container-tools-version VERSION \
+  --container-tools-source-commit COMMIT --container-tools-architecture ARCH \
+  --container-tools-libc musl|glibc
 
 Install MkChad launchers and their container tools. --check validates the
 complete installer-owned output set without writing. Replacing an existing
@@ -145,7 +149,7 @@ preflight_launchers() {
 
 preflight_all() {
   local -a args=(--check)
-  [[ -z $recovery_dir ]] || args+=(--recovery-dir "$recovery_dir")
+  args+=("${package_args[@]}")
   "$tools_installer" "${args[@]}"
   preflight_launchers
 }
@@ -188,7 +192,11 @@ install_file() {
 }
 
 acquire_lock() {
-  local lock="$target_dir/.install_nvim.lock" uid
+  local lock="$HOME/.local/.install_nvim.lock" uid
+  if [[ ! -e $HOME/.local && ! -L $HOME/.local ]]; then
+    mkdir -m 700 -- "$HOME/.local"
+  fi
+  check_safe_directory "$HOME/.local" "$HOME/.local"
   [[ ! -L $lock ]] || die "unsafe installer lock symlink: $lock"
   if [[ -e $lock ]]; then
     [[ -f $lock ]] || die "unsafe installer lock type: $lock"
@@ -207,6 +215,12 @@ while (($#)); do
       recovery_dir=$2
       shift 2
       ;;
+    --container-tools-archive) package_args+=(--container-tools-archive "$2"); shift 2 ;;
+    --container-tools-sha256) package_args+=(--container-tools-sha256 "$2"); shift 2 ;;
+    --container-tools-version) package_args+=(--container-tools-version "$2"); shift 2 ;;
+    --container-tools-source-commit) package_args+=(--container-tools-source-commit "$2"); shift 2 ;;
+    --container-tools-architecture) package_args+=(--container-tools-architecture "$2"); shift 2 ;;
+    --container-tools-libc) package_args+=(--container-tools-libc "$2"); shift 2 ;;
     -h | --help) usage; exit 0 ;;
     *) die "unknown option: $1" ;;
   esac
@@ -217,14 +231,26 @@ case ${MKCHAD_TRUST_GROUP_WRITABLE_ROOTS:-0} in
   *) die "MKCHAD_TRUST_GROUP_WRITABLE_ROOTS must be 0 or 1" ;;
 esac
 
+if (( ${#package_args[@]} == 0 )); then
+  package_args=(
+    --container-tools-archive "${CONTAINER_TOOLS_HOST_PACKAGE_ARCHIVE:-}"
+    --container-tools-sha256 "${CONTAINER_TOOLS_HOST_PACKAGE_SHA256:-}"
+    --container-tools-version "${CONTAINER_TOOLS_HOST_PACKAGE_VERSION:-}"
+    --container-tools-source-commit "${CONTAINER_TOOLS_HOST_PACKAGE_SOURCE_COMMIT:-}"
+    --container-tools-architecture "${CONTAINER_TOOLS_HOST_PACKAGE_ARCHITECTURE:-}"
+    --container-tools-libc "${CONTAINER_TOOLS_HOST_PACKAGE_LIBC:-}"
+  )
+fi
+
 preflight_all
 (( check_only )) && exit 0
-ensure_target_dir
 acquire_lock
 preflight_all
-tool_args=(--lock-held)
+tool_args=()
 [[ -z $recovery_dir ]] || tool_args+=(--recovery-dir "$recovery_dir")
+tool_args+=("${package_args[@]}")
 "$tools_installer" "${tool_args[@]}"
+ensure_target_dir
 for source in "${files[@]}"; do
   install_file "$source"
 done
