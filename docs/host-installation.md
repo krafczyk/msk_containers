@@ -74,3 +74,23 @@ nvim/bin/install_nvim_container --source-revision FULL_40_CHARACTER_SHA IMAGE
 The schema-2 deployer first invokes the same interface with `--dry-run`, then
 runs apply only after complete preflight. Managed image names retain their
 existing validation and do not accept a source revision override.
+
+## Selected-Root Runtime Evidence
+
+`tests/container_tools_selected_root_runtime_test.sh` is the parent-side
+selected-root evidence harness. Its deterministic `--self-test` delegates the
+closed `container-tools.runtime-evidence/v1` report and exact-cleanup checks to
+the finalized `container_tools` child, then verifies the expected host and
+in-container package identities, matching product major, and image digest. Its
+fake Cargo, Slurm, and alternate-root repair cases prove the parent admission
+and exact-once dispatch boundary only.
+
+```bash
+bash tests/container_tools_selected_root_runtime_test.sh --self-test
+```
+
+`--run-native` refuses cross-major package identities before it probes a
+candidate, and returns `77` when the requested local runtime or immutable image
+candidate is unavailable. It does not claim Bash parity or final-image
+operability: the child runner still requires the retained image and a
+release-specific selected-root runner before either claim can be accepted.

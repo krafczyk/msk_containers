@@ -695,7 +695,7 @@ x86_build="$repo/nvim/x86/nvim_container_x86_build.sh"
 arm_build="$repo/nvim/aarch64/nvim_container_aarch64_build.sh"
 x86_singularity_build="$repo/nvim/x86/nvim_container_x86_build_singularity.sh"
 arm_singularity_build="$repo/nvim/aarch64/nvim_container_aarch64_build_singularity.sh"
-runtime_test="$repo/tests/host_bridge_backend_runtime_test.sh"
+runtime_test="$repo/tests/container_tools_selected_root_runtime_test.sh"
 
 python3 - "$manifest" "$x86" "$arm" <<'PY'
 import json
@@ -1023,6 +1023,9 @@ assert_contains "$adr" 'it through `/usr/bin/proot`'
 assert_contains "$adr" 'The isolated prefix retains the applicable upstream'
 assert_contains "$adr" 'PRoot and `lib/uthash` license material.'
 
+bash "$runtime_test" --self-test
+
+: <<'RETIRED_LEGACY_BACKEND_RUNTIME_TEST'
 make_bwrap_fixture() {
   local path=$1
 
@@ -1102,7 +1105,7 @@ import json
 import sys
 
 result = json.loads(sys.argv[1])
-assert result["schema"] == "mkchad.host-bridge-backend-runtime/v1"
+assert result["schema"] == "container-tools.runtime-evidence/v1"
 assert result["architecture"] == sys.argv[2]
 assert result["runtime_kind"] == sys.argv[3]
 for name, installed, version_valid, operational, reason in (
@@ -1117,7 +1120,7 @@ for name, installed, version_valid, operational, reason in (
 PY
 }
 
-runtime_fixture_dir="$test_tmpdir/host-bridge-runtime"
+runtime_fixture_dir="$test_tmpdir/selected-root-runtime"
 mkdir -p "$runtime_fixture_dir"
 bwrap_fixture="$runtime_fixture_dir/bwrap"
 proot_fixture="$runtime_fixture_dir/proot"
@@ -1230,7 +1233,7 @@ if [[ -s $runtime_fixture_dir/noisy.stderr ]]; then
   printf '%s\n' 'runtime test leaked bounded probe diagnostics' >&2
   exit 1
 fi
-if compgen -G "$runtime_probe_tmp/host-bridge-backend-runtime.*" > /dev/null; then
+if compgen -G "$runtime_probe_tmp/selected-root-runtime.*" > /dev/null; then
   printf '%s\n' 'runtime test left bounded probe captures behind' >&2
   exit 1
 fi
@@ -1275,5 +1278,5 @@ if [[ -s $runtime_fixture_dir/unknown.stdout ]]; then
   printf '%s\n' 'runtime test emitted JSON for unknown overrides' >&2
   exit 1
 fi
-
+RETIRED_LEGACY_BACKEND_RUNTIME_TEST
 printf '%s\n' 'nvim container tooling tests passed'

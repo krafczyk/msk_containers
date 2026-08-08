@@ -99,7 +99,7 @@ Fedora package names, but DNF may satisfy an executable capability such as
 | `zip`, `unzip`, `tar` | All | Extract and create the archive formats used by downloaded toolchains, language servers, and development workflows. |
 | `gettext` | All | Provides translation and message-catalog tooling used by the Neovim build. |
 
-## Host Bridge Prerequisites
+## Container-Tools Selected-Root Prerequisites
 
 The x86_64 and aarch64 Fedora 43 images select the following direct RPMs from
 the Fedora 43 package/update stream. They provide complementary full-root
