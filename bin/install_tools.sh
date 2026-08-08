@@ -101,7 +101,7 @@ package_args=(--archive "$archive" --sha256 "$digest" --version "$version" \
   --source-commit "$source_commit" --architecture "$architecture" --libc "$libc")
 if (( check_only )); then
   [[ -z $recovery_dir ]] || die '--recovery-dir is not valid with --check'
-  exec "$package_installer" --check "${package_args[@]}"
+  exec "$package_installer" --check "${package_args[@]}" --prefix "$HOME/.local"
 fi
 if [[ -z $recovery_dir ]]; then
   recovery_dir="$HOME/.local/.container-tools-recovery"
