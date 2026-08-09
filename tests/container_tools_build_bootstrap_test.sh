@@ -22,6 +22,8 @@ bash_path=$(command -v bash)
 make_path=$(command -v make)
 ar_path=$(command -v ar)
 ranlib_path=$(command -v ranlib)
+as_path=$(command -v as)
+ld_path=$(command -v ld)
 sleep_path=$(command -v sleep)
 mkdir_path=$(command -v mkdir)
 mktemp_path=$(command -v mktemp)
@@ -42,6 +44,8 @@ ln -s "$bash_path" "$base_bin/bash"
 ln -s "$make_path" "$base_bin/make"
 ln -s "$ar_path" "$base_bin/ar"
 ln -s "$ranlib_path" "$base_bin/ranlib"
+ln -s "$as_path" "$base_bin/as"
+ln -s "$ld_path" "$base_bin/ld"
 ln -s "$sleep_path" "$base_bin/sleep"
 ln -s "$mkdir_path" "$base_bin/mkdir"
 ln -s "$mktemp_path" "$base_bin/mktemp"
