@@ -8,23 +8,7 @@ nvim_dir=$(realpath "$script_dir/..")
 context=$(mktemp -d /tmp/mkchad-v1/container-tools-c11/nvim-aarch64-docker-context.XXXXXX)
 trap 'rm -rf -- "$context"' EXIT
 
-if [[ -n ${CT_ROOT:-} ]]; then
-    [[ $CT_ROOT == /* ]] || { printf 'CT_ROOT must be an absolute package bin directory\n' >&2; exit 1; }
-    container_tools=$(realpath -e -- "$CT_ROOT/container-tools" 2>/dev/null) || {
-        printf 'container-tools executable is not usable beneath CT_ROOT: %s\n' "$CT_ROOT" >&2
-        exit 1
-    }
-else
-    container_tools=$(command -v container-tools) || {
-        printf 'container-tools executable was not found on PATH\n' >&2
-        exit 1
-    }
-fi
-
-if [[ ! -f $container_tools || ! -x $container_tools ]] || ! "$container_tools" package verify >/dev/null; then
-    printf 'container-tools executable is not a complete package: %s\n' "$container_tools" >&2
-    exit 1
-fi
+container_tools=$("$nvim_dir/bin/resolve_container_tools.sh")
 
 cp -a -- "$nvim_dir/." "$context"
 "$nvim_dir/bin/stage_container_tools_package.sh" aarch64 "$context"

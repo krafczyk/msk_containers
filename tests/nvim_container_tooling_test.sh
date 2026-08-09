@@ -84,7 +84,13 @@ assert_no_ct_library_sources() {
 }
 
 assert_native_build_commands() {
-  local architecture native_architecture docker_script singularity_script
+  local architecture native_architecture docker_script singularity_script resolver
+
+  resolver="$repo/nvim/bin/resolve_container_tools.sh"
+  [[ -x $resolver ]] || {
+    printf 'container-tools build resolver is not executable: %s\n' "$resolver" >&2
+    exit 1
+  }
 
   for architecture in x86 aarch64 ppc64le; do
     case $architecture in
@@ -96,6 +102,10 @@ assert_native_build_commands() {
     singularity_script="$repo/nvim/$architecture/nvim_container_${architecture}_build_singularity.sh"
     assert_contains "$docker_script" "\"\$container_tools\" buildx exec --architecture $native_architecture -- docker buildx build"
     assert_contains "$singularity_script" '"$container_tools" runtime exec --backend "${SINGULARITY##*/}" -- "$SINGULARITY" build'
+    assert_contains "$docker_script" 'resolve_container_tools.sh")'
+    assert_contains "$singularity_script" 'resolve_container_tools.sh")'
+    assert_not_contains "$docker_script" 'container-tools executable was not found on PATH'
+    assert_not_contains "$singularity_script" 'container-tools executable was not found on PATH'
     assert_contains "$docker_script" "stage_container_tools_package.sh\" $native_architecture \"\$context\""
     assert_contains "$singularity_script" "stage_container_tools_package.sh\" $native_architecture \"\$context\""
     assert_contains "$docker_script" 'CONTAINER_TOOLS_PACKAGE_SOURCE_COMMIT='
@@ -403,22 +413,19 @@ assert_x86_package_staging
 
 assert_orchestration_invocations() {
   local architecture=$1
-  local platform cache_architecture build_context
+  local platform cache_architecture
   case $architecture in
     x86)
       platform=linux/x86_64
       cache_architecture=x86_64
-      build_context=$repo/nvim
       ;;
     aarch64)
       platform=linux/arm64
       cache_architecture=aarch64
-      build_context=$repo/nvim
       ;;
     ppc64le)
       platform=linux/ppc64le
       cache_architecture=ppc64le
-      build_context=$repo/nvim/ppc64le
       ;;
     *)
       printf 'unsupported orchestration architecture: %s\n' "$architecture" >&2
@@ -427,7 +434,6 @@ assert_orchestration_invocations() {
   esac
   local image="nvim_container_$architecture"
   local build_script="$repo/nvim/$architecture/${image}_build.sh"
-  local dockerfile="$repo/nvim/$architecture/${image}.dockerfile"
   local export_tar="${image}.tar"
   local definition="${image}.def"
   local sif="${image}.sif"
@@ -469,6 +475,8 @@ assert_orchestration_invocations() {
       '    : > "$cache_directory/index.json"' \
       '    : > "$cache_directory/generation-$NVIM_CONTAINER_BUILD_ITERATION"' \
       '    display=type=local,dest=CACHE_STAGING,mode=max' \
+      '  elif [[ $argument == /tmp/mkchad-v1/container-tools-c11/nvim-*-docker-context.* ]]; then' \
+      '    if [[ $argument == *.dockerfile ]]; then display=BUILD_DOCKERFILE; else display=BUILD_CONTEXT; fi' \
       '  fi' \
       '  printf " <%s>" "$display" >> "$NVIM_CONTAINER_COMMAND_LOG"' \
       'done' \
@@ -490,12 +498,12 @@ assert_orchestration_invocations() {
   done
 
   expected=$(printf '%s\n' \
-    "docker <TMPDIR=$docker_tmp> <buildx> <build> <--cache-to> <type=local,dest=CACHE_STAGING,mode=max> <--platform> <$platform> <-f> <$dockerfile> <-t> <$image:latest> <--load> <$build_context>" \
+    "docker <TMPDIR=$docker_tmp> <buildx> <build> <--cache-to> <type=local,dest=CACHE_STAGING,mode=max> <--build-arg> <CONTAINER_TOOLS_PACKAGE_SHA256=$package_sha256> <--build-arg> <CONTAINER_TOOLS_PACKAGE_VERSION=$package_version> <--build-arg> <CONTAINER_TOOLS_PACKAGE_SOURCE_COMMIT=$package_commit> <--build-arg> <CONTAINER_TOOLS_PACKAGE_ARCHITECTURE=$cache_architecture> <--build-arg> <CONTAINER_TOOLS_PACKAGE_LIBC=$package_libc> <--platform> <$platform> <-f> <BUILD_DOCKERFILE> <-t> <$image:latest> <--load> <BUILD_CONTEXT>" \
     "docker <save> <$image:latest> <-o> <$export_tar>" \
-    "singularity <CACHE=$singularity_cache> <TMP=$singularity_tmp> <build> <--force> <--fakeroot> <$sif> <$definition>" \
-    "docker <TMPDIR=$docker_tmp> <buildx> <build> <--cache-from> <type=local,src=$current_cache> <--cache-to> <type=local,dest=CACHE_STAGING,mode=max> <--platform> <$platform> <-f> <$dockerfile> <-t> <$image:latest> <--load> <$build_context>" \
+    "singularity <CACHE=$singularity_cache> <TMP=$singularity_tmp> <build> <--force> <--fakeroot> <$repo/nvim/$architecture/$sif> <$definition>" \
+    "docker <TMPDIR=$docker_tmp> <buildx> <build> <--cache-from> <type=local,src=$current_cache> <--cache-to> <type=local,dest=CACHE_STAGING,mode=max> <--build-arg> <CONTAINER_TOOLS_PACKAGE_SHA256=$package_sha256> <--build-arg> <CONTAINER_TOOLS_PACKAGE_VERSION=$package_version> <--build-arg> <CONTAINER_TOOLS_PACKAGE_SOURCE_COMMIT=$package_commit> <--build-arg> <CONTAINER_TOOLS_PACKAGE_ARCHITECTURE=$cache_architecture> <--build-arg> <CONTAINER_TOOLS_PACKAGE_LIBC=$package_libc> <--platform> <$platform> <-f> <BUILD_DOCKERFILE> <-t> <$image:latest> <--load> <BUILD_CONTEXT>" \
     "docker <save> <$image:latest> <-o> <$export_tar>" \
-    "singularity <CACHE=$singularity_cache> <TMP=$singularity_tmp> <build> <--force> <--fakeroot> <$sif> <$definition>")
+    "singularity <CACHE=$singularity_cache> <TMP=$singularity_tmp> <build> <--force> <--fakeroot> <$repo/nvim/$architecture/$sif> <$definition>")
   if ! diff -u <(printf '%s\n' "$expected") "$command_log"; then
     printf 'unexpected %s orchestration command sequence\n' "$architecture" >&2
     exit 1
@@ -526,7 +534,9 @@ assert_alternate_runtime_selection() {
   local tmp="$test_tmpdir/alternate-runtime/tmp"
   local utility
   mkdir -p "$fake_bin" "$home/.config"
-  for utility in bash cat chmod dirname install realpath stat timeout; do
+  for utility in \
+    awk bash cat chmod cmp cp dirname git grep gzip install mkdir mktemp mv readelf \
+    realpath rm sed sha256sum sort stat tar timeout; do
     ln -s "$(command -v "$utility")" "$fake_bin/$utility"
   done
   printf '%s\n' \
@@ -546,7 +556,7 @@ assert_alternate_runtime_selection() {
       CT_ROOT=$container_tools_test_root \
       PATH=$fake_bin /bin/bash ./nvim_container_x86_build_singularity.sh
   )
-  expected="apptainer <$cache> <$tmp> <build> <--force> <--fakeroot> <nvim_container_x86.sif> <nvim_container_x86.def>"
+  expected="apptainer <$cache> <$tmp> <build> <--force> <--fakeroot> <$repo/nvim/x86/nvim_container_x86.sif> <nvim_container_x86.def>"
   [[ $(<"$command_log") == "$expected" ]] || {
     printf '%s\n' 'Apptainer fallback did not receive configured runtime storage' >&2
     exit 1
@@ -1035,6 +1045,10 @@ assert_contains "$adr" 'checked-out submodule commit `e493aa90a2833b4655927598f1
 assert_contains "$adr" '| `glibc-static` | PPC | Fedora Rawhide package stream |'
 assert_contains "$adr" '## Container-Tools Package Delivery'
 assert_contains "$adr" '`/opt/msk/container-tools`'
+assert_contains "$adr" '`/tmp/mkchad-v1/container-tools-c11/bootstrap/<architecture>/<source-commit>`'
+assert_contains "$adr" 'normalized native host architecture and source commit'
+assert_contains "$adr" 'architecture has an independent serialization lock'
+assert_contains "$adr" '`CT_CONTAINER_TOOLS_BOOTSTRAP_ROOT` retains this'
 assert_contains "$adr" 'CARE, QEMU, and other PRoot utilities'
 assert_contains "$adr" 'are not built or installed.'
 assert_contains "$adr" 'installs the executable under `/opt/msk/proot`, and exposes'

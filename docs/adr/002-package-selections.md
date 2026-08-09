@@ -136,6 +136,30 @@ repository: release/deployment integration supplies the selected per-architectur
 archive in later work. The verified x86_64 archive used by focused parent tests
 does not select an archive for aarch64 or ppc64le.
 
+Image-build control scripts resolve their host-side `container-tools` executable
+in this order: an explicit complete `CT_ROOT`, then a complete package found on
+`PATH`, then a temporary native bootstrap. An invalid explicit or discovered
+package fails closed and never falls through. Only an absent `PATH` command
+permits `nvim/bin/resolve_container_tools.sh` to clone the clean
+gitlink-selected `container_tools` commit into a private staging directory and
+build a dynamic host package with CMake. The bootstrap is content-addressed by
+normalized native host architecture and source commit below
+`/tmp/mkchad-v1/container-tools-c11/bootstrap/<architecture>/<source-commit>`;
+the normalized architectures are `x86_64`, `aarch64`, and `ppc64le`. Each
+architecture has an independent serialization lock, so `package verify --json`
+must report the matching native architecture and gitlink source commit before a
+package is reused or atomically published. Git, CMake, and package-verification
+commands run through GNU `timeout` with finite clone, configure, build, install,
+and verification limits; the PPC64LE-capable build limit is 30 minutes and the
+serialization-lock wait is bounded at one hour. Timed commands run in their own
+process group so timeout cleanup reaches compiler descendants.
+`CT_CONTAINER_TOOLS_BOOTSTRAP_ROOT` retains this
+`<architecture>/<source-commit>` layout for focused tests. The bootstrap
+resolver requires GNU `timeout`; the bootstrap additionally requires host Git,
+CMake, a C compiler, `flock`, `uname`, and standard shell/core utilities. It is
+control-plane-only and does not replace, inspect, or select the separately
+supplied static architecture archive embedded in the image.
+
 PRoot is built from its upstream Git repository rather than downloaded as a
 binary. Both maintained Dockerfiles clone
 `https://github.com/proot-me/proot.git`, detach at the exact root revision,
