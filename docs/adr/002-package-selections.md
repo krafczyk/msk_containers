@@ -121,7 +121,7 @@ inside the image. PPC64LE uses its native GCC toolchain with `glibc-static`.
 Every maintained Dockerfile owns the `container-tools` source selection. It
 clones `https://github.com/krafczyk/container_tools.git`, checks out the same
 reviewed full commit
-`eefe69de858737cb2228b97a915f28e228facf2a`, verifies detached `HEAD`, then
+`16776f2b70506816b96a31b0f84f6e7dd2b32313`, verifies detached `HEAD`, then
 configures, builds, and installs the static executable with CMake under
 `/opt/msk/container-tools`. x86_64 and aarch64 use `musl-gcc`; PPC64LE uses GCC
 with `glibc-static`. The Dockerfile verifies the compiled human and JSON version
