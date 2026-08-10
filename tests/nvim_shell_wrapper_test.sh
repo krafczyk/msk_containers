@@ -30,6 +30,10 @@ ln -s "$alternate_tools" "$alternate_link"
 : > "$image"
 HOME="$home" "$installer" >/dev/null
 package_bin=$(realpath "$bin")
+for launcher in container-tools ct_exec.sh ct_shell.sh ct_instance_exec.sh ct_mount_detector.sh ct_args.sh; do
+  printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$bin/$launcher"
+  chmod 755 "$bin/$launcher"
+done
 cmp "$repo/nvim/bin/ct_launcher.sh" "$bin/ct_launcher.sh"
 # shellcheck disable=SC1090,SC1091 # Exercise the installed resolver copy directly.
 . "$bin/ct_launcher.sh"

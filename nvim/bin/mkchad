@@ -12,7 +12,6 @@ mkchad_cache_dir="$HOME/.local/cache"
 msk_npm_global_base="$HOME/.local/share/msk_containers/npm-global"
 msk_npm_container_base="/opt/msk/npm-global"
 opencode_config="$HOME/.config/mkchad/opencode.jsonc"
-bootstrap="$script_dir/mkchad-container-bootstrap"
 
 ## Solve issue with Curl permissions and keep runtime caches on mounted storage.
 mkdir -p "$mkchad_runtime_dir" "$mkchad_cache_dir" "$msk_npm_global_base"
@@ -30,5 +29,4 @@ exec "$ct_instance_exec" "--$TOOL" \
   --ct-env "XDG_CACHE_HOME=$mkchad_cache_dir" \
   --ct-env "MSK_NPM_GLOBAL_BASE=$msk_npm_container_base" \
   --ct-env "OPENCODE_CONFIG=$opencode_config" \
-  --ct-bootstrap "$bootstrap" \
   -- "$NVIM_CONT_LOCATION" nvim "$@"

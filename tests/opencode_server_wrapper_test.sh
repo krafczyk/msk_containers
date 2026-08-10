@@ -43,6 +43,10 @@ ln -s "${image_target##*/}" "$image"
 : > "$mount_config"
 HOME="$home" "$installer" >/dev/null
 package_bin=$(realpath "$bin")
+for launcher in container-tools ct_exec.sh ct_shell.sh ct_instance_exec.sh ct_mount_detector.sh ct_args.sh; do
+  printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$bin/$launcher"
+  chmod 755 "$bin/$launcher"
+done
 
 cat > "$fake/apptainer" <<'EOF'
 #!/usr/bin/env bash
@@ -378,14 +382,21 @@ mapfile -t mkchad_runtime_argv < "$runtime_log"
   && ${mkchad_runtime_argv[2]} == "$home/.local/share/mkchad/tmp/container-instances" \
   && ${mkchad_runtime_argv[5]} == --ct-env \
   && ${mkchad_runtime_argv[6]} == MKCHAD_PERSISTENT_INSTANCE=1 \
-  && ${mkchad_runtime_argv[19]} == --ct-bootstrap \
-  && ${mkchad_runtime_argv[20]} == "$package_bin/mkchad-container-bootstrap" \
-  && ${mkchad_runtime_argv[21]} == -- \
-  && ${mkchad_runtime_argv[22]} == "$image" \
-  && ${mkchad_runtime_argv[23]} == nvim \
-  && ${mkchad_runtime_argv[24]} == 'file with spaces' ]] || {
+  && ${mkchad_runtime_argv[15]} == --ct-env \
+  && ${mkchad_runtime_argv[16]} == MSK_NPM_GLOBAL_BASE=/opt/msk/npm-global \
+  && ${mkchad_runtime_argv[17]} == --ct-env \
+  && ${mkchad_runtime_argv[18]} == "OPENCODE_CONFIG=$home/.config/mkchad/opencode.jsonc" \
+  && ${mkchad_runtime_argv[19]} == -- \
+  && ${mkchad_runtime_argv[20]} == "$image" \
+  && ${mkchad_runtime_argv[21]} == nvim \
+  && ${mkchad_runtime_argv[22]} == 'file with spaces' ]] || {
   printf '%s\n' 'MkChad launcher did not use the shared persistent instance contract' >&2; exit 1;
 }
+for argument in "${mkchad_runtime_argv[@]}"; do
+  [[ $argument != --ct-bootstrap ]] || {
+    printf '%s\n' 'MkChad launcher selected the npm prefix before MkChad initialization' >&2; exit 1;
+  }
+done
 
 custom_state="$work/state root"
 mkdir -p "$custom_state"

@@ -275,16 +275,17 @@ extraction. The image installs the binary at `/opt/msk/bun/bin/bun` and exposes
 
 At runtime, MkChad bind-mounts an architecture-neutral writable npm parent at
 `/opt/msk/npm-global`. MkChad derives a Node platform/architecture/major key
-such as `linux-x64-node24` during editor initialization. `nvim_shell` and the
-standalone OpenCode launcher use container-tools' generic bootstrap hook to run
-`mkchad-container-bootstrap`, which performs the same derivation after the
-container runtime has applied launcher environment values. The Apptainer image
-environment passes the mounted parent to MkChad as `MSK_NPM_GLOBAL_ROOT`; MkChad
-then appends that same derived key. All three entry points therefore select the
-same writable child ahead of the immutable baseline without mixing incompatible
-Node or architecture artifacts. The PPC image can use compatible side-installed
-Node tools, but OpenCode itself remains unavailable there without an upstream
-PPC64LE release.
+such as `linux-x64-node24` during editor initialization. The main `mkchad`
+launcher passes that parent as `MSK_NPM_GLOBAL_BASE` and does not use the
+container-tools bootstrap hook, so MkChad Lua selects and publishes the child
+once as `MSK_NPM_GLOBAL_ROOT` and `NPM_CONFIG_PREFIX`. `nvim_shell` and
+host-launched standalone OpenCode flows use the generic bootstrap hook to make
+the same selection before their payload; in-container server children inherit
+the editor-selected environment. Every entry point therefore selects the same
+writable child ahead of the immutable baseline without repeating the Node key or
+mixing incompatible Node or architecture artifacts. The PPC image can use
+compatible side-installed Node tools, but OpenCode itself remains unavailable
+there without an upstream PPC64LE release.
 
 ## Verified OpenCode Release
 
