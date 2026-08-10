@@ -1,11 +1,9 @@
 # Host Installation
 
-`bin/install_nvim.sh` is the public installer for MkChad host launchers and a
-verified container-tools package. It requires one explicit package identity:
-archive, SHA-256, version, source commit, architecture, and libc family. The
-same values may be passed as `--container-tools-*` options or as the
-`CONTAINER_TOOLS_HOST_PACKAGE_*` environment variables used by deployment.
-Normal callers use this interface rather than copying individual outputs.
+`bin/install_nvim.sh` is the public installer for MkChad host launchers. Host
+`container_tools` is installed separately from the deployment-selected source
+checkout through normal CMake configure, build, and install commands. The
+launcher installer accepts no source, archive, or package-identity inputs.
 
 ## Container Tool Override
 
@@ -26,23 +24,18 @@ configuration, cache, state, and persistent-instance paths.
 
 ## Release Deployer Handoff
 
-The schema-2 `mkchad-release` deployer calls the pinned checkout with a fresh,
-private mode-`0700` directory for both preflight and apply:
+The schema-2 deployer calls the pinned `msk_containers` checkout with a fresh,
+private mode-`0700` directory for launcher preflight and apply:
 
 ```bash
-bin/install_nvim.sh --check --container-tools-archive PACKAGE ...
-bin/install_nvim.sh --recovery-dir /private/deployment-recovery --container-tools-archive PACKAGE ...
+bin/install_nvim.sh --check --recovery-dir /private/deployment-recovery
+bin/install_nvim.sh --recovery-dir /private/deployment-recovery
 ```
 
-`--check` validates archive identity without creating target paths. Apply uses
-the child package installer transaction for `${HOME}/.local`, then installs
-launcher files under the same parent lock. Recovery is private and records
-replacement state; the two managed directory updates are recoverable rather
-than claimed to be one impossible multi-directory atomic rename.
-
-`bin/install_tools.sh` exposes the same `--check` and `--recovery-dir`
-interface. `install_nvim.sh` remains the public entrypoint when both launchers
-and tools are needed.
+`--check` validates launcher outputs without creating target paths. Recovery is
+private and records replaced launcher bytes. Release deployment independently
+checks out its pinned `container_tools` component, installs it beneath
+`${HOME}/.local` with CMake, and verifies its compile-time JSON identity.
 
 ## Image Construction
 

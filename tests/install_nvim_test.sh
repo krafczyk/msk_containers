@@ -12,12 +12,6 @@ work=${1:?pass a new task-specific directory beneath /tmp/mkchad-v1}
 }
 
 repo=$(git rev-parse --show-toplevel)
-export CONTAINER_TOOLS_HOST_PACKAGE_ARCHIVE=${CONTAINER_TOOLS_HOST_PACKAGE_ARCHIVE:?pass the verified host package archive}
-export CONTAINER_TOOLS_HOST_PACKAGE_SHA256=${CONTAINER_TOOLS_HOST_PACKAGE_SHA256:?pass the host package SHA-256}
-export CONTAINER_TOOLS_HOST_PACKAGE_VERSION=${CONTAINER_TOOLS_HOST_PACKAGE_VERSION:?pass the host package version}
-export CONTAINER_TOOLS_HOST_PACKAGE_SOURCE_COMMIT=${CONTAINER_TOOLS_HOST_PACKAGE_SOURCE_COMMIT:?pass the host package source commit}
-export CONTAINER_TOOLS_HOST_PACKAGE_ARCHITECTURE=${CONTAINER_TOOLS_HOST_PACKAGE_ARCHITECTURE:?pass the host package architecture}
-export CONTAINER_TOOLS_HOST_PACKAGE_LIBC=${CONTAINER_TOOLS_HOST_PACKAGE_LIBC:?pass the host package libc}
 fixture="$work/fixture"
 home="$work/home"
 recovery="$work/recovery"
@@ -26,7 +20,6 @@ chmod 700 "$recovery"
 cp -a "$repo/bin" "$repo/container_tools" "$repo/nvim" "$fixture/"
 
 installer="$fixture/bin/install_nvim.sh"
-tools_installer="$fixture/bin/install_tools.sh"
 target="$home/.local/bin"
 
 # Durability must be scoped to each installed path, not its entire filesystem.
@@ -58,9 +51,9 @@ HOME="$home" bash "$installer" --check >/dev/null
 }
 
 HOME="$home" bash "$installer" >/dev/null
-[[ -x $target/nvim && -x $target/nvim_clear_npm_global && -x $target/ct_exec.sh \
-  && -x $target/ct_launcher.sh ]] || {
-  printf '%s\n' 'installer did not install launchers and container tools' >&2
+[[ -x $target/nvim && -x $target/nvim_clear_npm_global && -x $target/ct_launcher.sh \
+  && ! -e $target/ct_exec.sh ]] || {
+  printf '%s\n' 'installer did not install only the launcher set' >&2
   exit 1
 }
 
@@ -74,7 +67,6 @@ HOME="$home" bash "$installer" >/dev/null
 
 printf '%s\n' '# updated launcher fixture' >> "$fixture/nvim/bin/nvim"
 cp -- "$target/nvim" "$work/nvim-before"
-cp -- "$target/ct_exec.sh" "$work/ct-exec-before"
 HOME="$home" bash "$installer" --check >/dev/null
 cmp "$work/nvim-before" "$target/nvim" || {
   printf '%s\n' '--check rewrote a noncompliant launcher' >&2
@@ -162,8 +154,6 @@ set -e
 }
 PATH="$managed_bin:$PATH" MKCHAD_TEST_MANAGED_HOME="$managed_home" MKCHAD_TEST_REAL_STAT="$real_stat" \
   MKCHAD_TRUST_GROUP_WRITABLE_ROOTS=1 HOME="$managed_home" bash "$installer" --check >/dev/null
-PATH="$managed_bin:$PATH" MKCHAD_TEST_MANAGED_HOME="$managed_home" MKCHAD_TEST_REAL_STAT="$real_stat" \
-  MKCHAD_TRUST_GROUP_WRITABLE_ROOTS=1 HOME="$managed_home" bash "$tools_installer" --check >/dev/null
 set +e
 managed_world_output=$(PATH="$managed_bin:$PATH" MKCHAD_TEST_MANAGED_HOME="$managed_home" MKCHAD_TEST_MANAGED_MODE=777 \
   MKCHAD_TEST_REAL_STAT="$real_stat" MKCHAD_TRUST_GROUP_WRITABLE_ROOTS=1 HOME="$managed_home" bash "$installer" --check 2>&1)
@@ -182,18 +172,6 @@ set -e
   printf '%s\n' 'managed foreign-owned root was not rejected' >&2
   exit 1
 }
-chmod 777 "$managed_home/.local"
-set +e
-managed_descendant_output=$(PATH="$managed_bin:$PATH" MKCHAD_TEST_MANAGED_HOME="$managed_home" MKCHAD_TEST_REAL_STAT="$real_stat" \
-  MKCHAD_TRUST_GROUP_WRITABLE_ROOTS=1 HOME="$managed_home" bash "$tools_installer" --check 2>&1)
-managed_descendant_status=$?
-set -e
-chmod 755 "$managed_home/.local"
-[[ $managed_descendant_status -ne 0 && $managed_descendant_output == *'group- or world-writable'* ]] || {
-  printf '%s\n' 'unsafe managed-root descendant was not rejected' >&2
-  exit 1
-}
-
 foreign="$target/nvim_clear_data"
 if chown 1:1 "$foreign" 2>/dev/null; then
   set +e

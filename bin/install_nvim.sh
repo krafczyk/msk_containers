@@ -6,23 +6,18 @@ umask 077
 program=${0##*/}
 script_dir=$(dirname "$(realpath "$0")")
 bin_dir="$script_dir/../nvim/bin"
-tools_installer="$script_dir/install_tools.sh"
 target_dir="$HOME/.local/bin"
 check_only=0
 recovery_dir=
 stage=
 recovery_stage=
-package_args=()
 
 usage() {
   cat <<EOF
-Usage: $program [--check] [--recovery-dir DIR] --container-tools-archive FILE \
-  --container-tools-sha256 SHA256 --container-tools-version VERSION \
-  --container-tools-source-commit COMMIT --container-tools-architecture ARCH \
-  --container-tools-libc musl|glibc
+Usage: $program [--check] [--recovery-dir DIR]
 
-Install MkChad launchers and their container tools. --check validates the
-complete installer-owned output set without writing. Replacing an existing
+Install MkChad launchers. --check validates the complete installer-owned output
+set without writing. Replacing an existing
 non-compliant file requires a caller-created private recovery directory.
 EOF
 }
@@ -148,9 +143,6 @@ preflight_launchers() {
 }
 
 preflight_all() {
-  local -a args=(--check)
-  args+=("${package_args[@]}")
-  "$tools_installer" "${args[@]}"
   preflight_launchers
 }
 
@@ -215,12 +207,6 @@ while (($#)); do
       recovery_dir=$2
       shift 2
       ;;
-    --container-tools-archive) package_args+=(--container-tools-archive "$2"); shift 2 ;;
-    --container-tools-sha256) package_args+=(--container-tools-sha256 "$2"); shift 2 ;;
-    --container-tools-version) package_args+=(--container-tools-version "$2"); shift 2 ;;
-    --container-tools-source-commit) package_args+=(--container-tools-source-commit "$2"); shift 2 ;;
-    --container-tools-architecture) package_args+=(--container-tools-architecture "$2"); shift 2 ;;
-    --container-tools-libc) package_args+=(--container-tools-libc "$2"); shift 2 ;;
     -h | --help) usage; exit 0 ;;
     *) die "unknown option: $1" ;;
   esac
@@ -231,25 +217,10 @@ case ${MKCHAD_TRUST_GROUP_WRITABLE_ROOTS:-0} in
   *) die "MKCHAD_TRUST_GROUP_WRITABLE_ROOTS must be 0 or 1" ;;
 esac
 
-if (( ${#package_args[@]} == 0 )); then
-  package_args=(
-    --container-tools-archive "${CONTAINER_TOOLS_HOST_PACKAGE_ARCHIVE:-}"
-    --container-tools-sha256 "${CONTAINER_TOOLS_HOST_PACKAGE_SHA256:-}"
-    --container-tools-version "${CONTAINER_TOOLS_HOST_PACKAGE_VERSION:-}"
-    --container-tools-source-commit "${CONTAINER_TOOLS_HOST_PACKAGE_SOURCE_COMMIT:-}"
-    --container-tools-architecture "${CONTAINER_TOOLS_HOST_PACKAGE_ARCHITECTURE:-}"
-    --container-tools-libc "${CONTAINER_TOOLS_HOST_PACKAGE_LIBC:-}"
-  )
-fi
-
 preflight_all
 (( check_only )) && exit 0
 acquire_lock
 preflight_all
-tool_args=()
-[[ -z $recovery_dir ]] || tool_args+=(--recovery-dir "$recovery_dir")
-tool_args+=("${package_args[@]}")
-"$tools_installer" "${tool_args[@]}"
 ensure_target_dir
 for source in "${files[@]}"; do
   install_file "$source"
