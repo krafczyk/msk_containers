@@ -44,6 +44,15 @@ than claimed to be one impossible multi-directory atomic rename.
 interface. `install_nvim.sh` remains the public entrypoint when both launchers
 and tools are needed.
 
+## Image Construction
+
+The architecture image-build scripts invoke Docker Buildx or
+SingularityCE/Apptainer directly. Dockerfiles build their reviewed,
+full-commit-pinned `container-tools` checkout with CMake and install it under
+`/opt/msk/container-tools`; SIF definitions only convert the corresponding
+Docker archive. Image construction never selects a host `container-tools`
+package, `CT_ROOT`, archive, or package identity file.
+
 ## Writable npm Cleanup
 
 `nvim_clear_npm_global` removes the complete host-side writable npm root at

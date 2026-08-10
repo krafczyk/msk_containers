@@ -78,8 +78,8 @@ To update the base selection:
    `python3 tests/fedora_base_availability_unit_test.py`, followed by the live
    `python3 tests/fedora_base_availability_test.py` check.
 4. Complete one x86_64 and one aarch64 build from the new pin before release.
-   Use the architecture build scripts so configured Buildx cache and temporary
-   storage are exercised.
+   Use the architecture build scripts so Docker Buildx uses its native cache
+   and storage behavior.
 
 The operating-system entries below are direct DNF install operands. Most are
 Fedora package names, but DNF may satisfy an executable capability such as
@@ -99,12 +99,12 @@ Fedora package names, but DNF may satisfy an executable capability such as
 | `zip`, `unzip`, `tar` | All | Extract and create the archive formats used by downloaded toolchains, language servers, and development workflows. |
 | `gettext` | All | Provides translation and message-catalog tooling used by the Neovim build. |
 
-## Container-Tools Selected-Root Prerequisites
+## Container-Tools Build Prerequisites
 
 The x86_64 and aarch64 Fedora 43 images select the following direct RPMs from
 the Fedora 43 package/update stream. They provide complementary full-root
-backends and the native musl toolchain required by container-tools. PPC64LE
-uses its native GCC toolchain with `glibc-static` for its static package.
+backends and the native musl toolchain required to build `container-tools`
+inside the image. PPC64LE uses its native GCC toolchain with `glibc-static`.
 
 | Package | Architectures | Version/source policy | Purpose |
 | --- | --- | --- | --- |
@@ -116,49 +116,29 @@ uses its native GCC toolchain with `glibc-static` for its static package.
 | `musl-libc-static` | x86, ARM | Fedora 43 package/update stream | Provides the native static musl C library. |
 | `glibc-static` | PPC | Fedora Rawhide package stream | Provides static glibc objects for the PPC64LE container-tools package. |
 
-## Container-Tools Package Delivery
+## Container-Tools Image Build
 
-`container-tools` is selected as an independently verified static package for
-each maintained image architecture. Build callers receive an explicit archive,
-SHA-256, version, source commit, and libc family for their architecture; they
-verify those inputs against the clean `container_tools` gitlink and stage only
-the verified archive bytes into an isolated Docker or SingularityCE build
-context. The image definitions install the archive under
-`/opt/msk/container-tools`, verify package identity there, record that identity
-in Docker labels and `/etc/mkchad/container-tools-package.json`, and prepend its
-`bin/` directory to `PATH`. The in-image identity is explicitly mode `0644` so
-unprivileged runtime inspection can verify it.
+Every maintained Dockerfile owns the `container-tools` source selection. It
+clones `https://github.com/krafczyk/container_tools.git`, checks out the same
+reviewed full commit
+`eefe69de858737cb2228b97a915f28e228facf2a`, verifies detached `HEAD`, then
+configures, builds, and installs the static executable with CMake under
+`/opt/msk/container-tools`. x86_64 and aarch64 use `musl-gcc`; PPC64LE uses GCC
+with `glibc-static`. The Dockerfile verifies the compiled human and JSON version
+identity, including the source commit and `ct-mount-plan-v1` grammar, before
+removing its temporary source and build directories.
 
-The x86_64 and aarch64 packages use musl. PPC64LE uses static glibc and the
-image definition rejects an executable with dynamic `NEEDED` or interpreter
-entries before accepting it. Archive bytes are deliberately not tracked in this
-repository: release/deployment integration supplies the selected per-architecture
-archive in later work. The verified x86_64 archive used by focused parent tests
-does not select an archive for aarch64 or ppc64le.
+The installed `bin/` directory is near the front of the image `PATH`. No image
+build script resolves, bootstraps, stages, or invokes a host `container-tools`
+executable, including through `CT_ROOT`. Docker Buildx and
+SingularityCE/Apptainer run directly with their native cache and temporary
+storage behavior; this repository does not inject cache arguments or prune those
+native resources.
 
-Image-build control scripts resolve their host-side `container-tools` executable
-in this order: an explicit complete `CT_ROOT`, then a complete package found on
-`PATH`, then a temporary native bootstrap. An invalid explicit or discovered
-package fails closed and never falls through. Only an absent `PATH` command
-permits `nvim/bin/resolve_container_tools.sh` to clone the clean
-gitlink-selected `container_tools` commit into a private staging directory and
-build a dynamic host package with CMake. The bootstrap is content-addressed by
-normalized native host architecture and source commit below
-`/tmp/mkchad-v1/container-tools-c11/bootstrap/<architecture>/<source-commit>`;
-the normalized architectures are `x86_64`, `aarch64`, and `ppc64le`. Each
-architecture has an independent serialization lock, so `package verify --json`
-must report the matching native architecture and gitlink source commit before a
-package is reused or atomically published. Git, CMake, and package-verification
-commands run through GNU `timeout` with finite clone, configure, build, install,
-and verification limits; the PPC64LE-capable build limit is 30 minutes and the
-serialization-lock wait is bounded at one hour. Timed commands run in their own
-process group so timeout cleanup reaches compiler descendants.
-`CT_CONTAINER_TOOLS_BOOTSTRAP_ROOT` retains this
-`<architecture>/<source-commit>` layout for focused tests. The bootstrap
-resolver requires GNU `timeout`; the bootstrap additionally requires host Git,
-CMake, a C compiler, `flock`, `uname`, and standard shell/core utilities. It is
-control-plane-only and does not replace, inspect, or select the separately
-supplied static architecture archive embedded in the image.
+SingularityCE/Apptainer definitions only convert their architecture-matched
+Docker archive. They perform no second installation, package verification, or
+identity-file creation, and inherit the Docker image's installed executable and
+`PATH`.
 
 PRoot is built from its upstream Git repository rather than downloaded as a
 binary. Both maintained Dockerfiles clone
