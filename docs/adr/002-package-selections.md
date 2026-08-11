@@ -119,13 +119,13 @@ inside the image. PPC64LE uses its native GCC toolchain with `glibc-static`.
 ## Container-Tools Image Build
 
 Every maintained Dockerfile owns the `container-tools` source selection. It
-clones `https://github.com/krafczyk/container_tools.git`, checks out the same
-reviewed full commit
-`16776f2b70506816b96a31b0f84f6e7dd2b32313`, verifies detached `HEAD`, then
-configures, builds, and installs the static executable with CMake under
-`/opt/msk/container-tools`. x86_64 and aarch64 use `musl-gcc`; PPC64LE uses GCC
-with `glibc-static`. The Dockerfile verifies the compiled human and JSON version
-identity, including the source commit and `ct-mount-plan-v1` grammar, before
+clones `https://github.com/krafczyk/container_tools.git`, checks out a reviewed
+full commit, verifies detached `HEAD`, then configures, builds, and installs the
+static executable with CMake under `/opt/msk/container-tools`. x86_64 and
+aarch64 select `ef326f88a52bf387829a7edb8bfa9b047a04a6e8` and use `musl-gcc`;
+PPC64LE remains on `16776f2b70506816b96a31b0f84f6e7dd2b32313` with GCC and
+`glibc-static`. Each Dockerfile verifies the compiled human and JSON version
+identity, including its source commit and `ct-mount-plan-v1` grammar, before
 removing its temporary source and build directories.
 
 The installed `bin/` directory is near the front of the image `PATH`. No image

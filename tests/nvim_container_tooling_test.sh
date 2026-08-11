@@ -4,7 +4,8 @@
 set -euo pipefail
 
 repo=$(git rev-parse --show-toplevel)
-revision=16776f2b70506816b96a31b0f84f6e7dd2b32313
+revision=ef326f88a52bf387829a7edb8bfa9b047a04a6e8
+ppc_revision=16776f2b70506816b96a31b0f84f6e7dd2b32313
 work=$(mktemp -d /tmp/mkchad-v1/container-tools-runtime-boundary/nvim-tooling.XXXXXX)
 trap 'rm -rf -- "$work"' EXIT
 
@@ -112,16 +113,20 @@ assert_builder_commands() {
 }
 
 assert_definition_owned_builds() {
-  local architecture dockerfile definition compiler pin
+  local architecture dockerfile definition compiler expected_revision pin
   local -a pins=()
   for architecture in x86 aarch64 ppc64le; do
     dockerfile="$repo/nvim/$architecture/nvim_container_${architecture}.dockerfile"
     definition="$repo/nvim/$architecture/nvim_container_${architecture}.def"
     compiler=musl-gcc
-    [[ $architecture == ppc64le ]] && compiler=gcc
+    expected_revision=$revision
+    if [[ $architecture == ppc64le ]]; then
+      compiler=gcc
+      expected_revision=$ppc_revision
+    fi
     assert_contains "$dockerfile" 'https://github.com/krafczyk/container_tools.git'
-    assert_contains "$dockerfile" "git -C /tmp/container-tools checkout --detach $revision"
-    assert_contains "$dockerfile" "test \"\$(git -C /tmp/container-tools rev-parse HEAD)\" = $revision"
+    assert_contains "$dockerfile" "git -C /tmp/container-tools checkout --detach $expected_revision"
+    assert_contains "$dockerfile" "test \"\$(git -C /tmp/container-tools rev-parse HEAD)\" = $expected_revision"
     assert_contains "$dockerfile" "-D CMAKE_C_COMPILER=$compiler"
     assert_contains "$dockerfile" 'cmake --build /tmp/container-tools-build'
     assert_contains "$dockerfile" 'cmake --install /tmp/container-tools-build --prefix /opt/msk/container-tools'
@@ -137,10 +142,10 @@ assert_definition_owned_builds() {
     assert_not_contains "$definition" 'container-tools-package'
     assert_not_contains "$definition" '/opt/msk/container-tools/bin'
     pin=$(grep -Eo 'checkout --detach [0-9a-f]{40}' "$dockerfile" | awk '{print $3}')
-    [[ $pin == "$revision" ]] || fail "Dockerfile pin drifted for $architecture"
+    [[ $pin == "$expected_revision" ]] || fail "Dockerfile pin drifted for $architecture"
     pins+=("$pin")
   done
-  [[ ${pins[0]} == "${pins[1]}" && ${pins[1]} == "${pins[2]}" ]] || fail 'Dockerfile pins differ'
+  [[ ${pins[0]} == "${pins[1]}" ]] || fail 'x86 and aarch64 Dockerfile pins differ'
 }
 
 assert_documentation() {
@@ -148,6 +153,7 @@ assert_documentation() {
   local host_installation="$repo/docs/host-installation.md"
   assert_contains "$adr" '## Container-Tools Image Build'
   assert_contains "$adr" "$revision"
+  assert_contains "$adr" "$ppc_revision"
   assert_contains "$adr" 'does not inject cache arguments or prune'
   assert_not_contains "$adr" '## Container-Tools Package Delivery'
   assert_not_contains "$adr" resolve_container_tools.sh
