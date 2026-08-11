@@ -5,6 +5,26 @@
 checkout through normal CMake configure, build, and install commands. The
 launcher installer accepts no source, archive, or package-identity inputs.
 
+## Host Launcher Recovery
+
+Use the public installer directly when an existing MkChad host launcher is
+missing, damaged, or unable to return valid lifecycle status. Run these commands
+from the trusted `msk_containers` checkout whose launcher revision should be
+installed:
+
+```bash
+recovery_dir=$(mktemp -d "${TMPDIR:-/tmp}/mkchad-launcher-recovery.XXXXXX")
+chmod 700 "$recovery_dir"
+bin/install_nvim.sh --check --recovery-dir "$recovery_dir"
+bin/install_nvim.sh --recovery-dir "$recovery_dir"
+```
+
+`--check` performs a read-only preflight. Apply records every replaced launcher
+in the private recovery directory. Retain that directory until
+`~/.local/bin/mkchad-opencode-server status --json` returns exactly one valid
+JSON document and the interrupted deployment succeeds. This procedure does not
+install or replace `container_tools`.
+
 ## Container Tool Override
 
 Host launchers normally resolve `ct_*.sh` tools from the complete package in
