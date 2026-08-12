@@ -8,10 +8,10 @@ set -euo pipefail
 program=${0##*/}
 script_dir=$(dirname "$(realpath "$0")")
 . "$script_dir/ct_launcher.sh"
+. "$script_dir/mkchad-persistent-launcher.sh"
+. "$script_dir/nvim_library.sh"
 image_command="$script_dir/mkchad-opencode-server-image"
-bootstrap="$script_dir/mkchad-container-bootstrap"
 config_home=${XDG_CONFIG_HOME:-"$HOME/.config"}
-config_root="$config_home/mkchad"
 state_home=${XDG_STATE_HOME:-"$HOME/.local/state"}
 # Host runtime directories under /run are not bind-mounted into the image.
 runtime_dir="$HOME/.local/share/mkchad/tmp"
@@ -20,7 +20,6 @@ data_home=${XDG_DATA_HOME:-"$HOME/.local/share"}
 mkchad_data_dir="$data_home/mkchad"
 npm_base="$HOME/.local/share/msk_containers/npm-global"
 npm_container_base=/opt/msk/npm-global
-opencode_config="$config_root/opencode.jsonc"
 
 die() {
   printf '%s: %s\n' "$program" "$*" >&2
@@ -28,7 +27,6 @@ die() {
 }
 
 [[ -x $image_command ]] || die "in-image lifecycle command is missing or not executable: $image_command"
-[[ -x $bootstrap ]] || die "container bootstrap is missing or not executable: $bootstrap"
 [[ $state_home == /* ]] || die "XDG_STATE_HOME must be an absolute path: $state_home"
 
 container_signal=${SINGULARITY_CONTAINER:-${APPTAINER_CONTAINER:-}}
@@ -40,13 +38,11 @@ if [[ -n $container_signal && ( ${MKCHAD_NVIM_IMAGE:-} == 1 || ${container_signa
   exec "$image_command" "$@"
 fi
 
-if runtime_executable=$(command -v apptainer 2>/dev/null); then
-  runtime=apptainer
-elif runtime_executable=$(command -v singularity 2>/dev/null); then
-  runtime=singularity
-else
+if ! nvim_select_container_backend; then
   die "neither Apptainer nor SingularityCE is available"
 fi
+runtime=$NVIM_CONTAINER_RUNTIME
+runtime_executable=$NVIM_CONTAINER_RUNTIME_EXECUTABLE
 container_dir=${NVIM_CONTAINER_DIR:-"$HOME/containers"}
 image=${NVIM_CONT_LOCATION:-"$container_dir/neovim.sif"}
 [[ -f $image ]] || die "active Neovim image is missing: $image"
@@ -54,16 +50,17 @@ image=${NVIM_CONT_LOCATION:-"$container_dir/neovim.sif"}
 if [[ ${1:-} == status ]]; then
   foreground_launcher=$(ct_launcher_path ct_exec.sh)
   evidence_collector="$script_dir/mkchad-status-host-evidence"
-  runtime_executable=$(realpath -- "$runtime_executable")
+  runtime_command_dir=${runtime_executable%/*}
+  runtime_evidence_executable=$(realpath -- "$runtime_executable")
   system_path=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-  status_path="${runtime_executable%/*}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+  status_path="$runtime_command_dir:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
   [[ -x $evidence_collector ]] || die "host evidence collector is missing or not executable: $evidence_collector"
 
   # The evidence collector has one combined budget and emits only validated
   # scalar JSON encoded for argv transport.  A failed collection is explicit.
   host_evidence=$(env -i PATH="$system_path" HOME=/nonexistent \
     timeout --foreground --kill-after=1s 2s "$evidence_collector" \
-    --runtime "$runtime" --runtime-executable "$runtime_executable" \
+    --runtime "$runtime" --runtime-executable "$runtime_evidence_executable" \
     --image "$image" --container-dir "$container_dir" \
     --instance-root "$runtime_dir/container-instances" 2>/dev/null) || \
     host_evidence=eyJzY2hlbWEiOjEsImNvbnRhaW5lcl9ydW50aW1lIjp7InN0YXRlIjoidW5hdmFpbGFibGUifSwic2VsZWN0ZWRfaW1hZ2UiOnsic3RhdGUiOiJ1bmF2YWlsYWJsZSJ9LCJwZXJzaXN0ZWRfaW5zdGFuY2UiOnsic3RhdGUiOiJ1bmF2YWlsYWJsZSJ9fQ
@@ -97,41 +94,9 @@ if [[ ${1:-} == status ]]; then
     --ct-env "XDG_CACHE_HOME=$cache_dir" \
     --ct-env "XDG_DATA_HOME=$data_home" \
     --ct-env "MSK_NPM_GLOBAL_BASE=$npm_container_base" \
-    --ct-bootstrap "$bootstrap" \
+    --ct-bootstrap "$script_dir/mkchad-container-bootstrap" \
     -- "$image" /usr/bin/env HOME=/nonexistent \
     "$image_command" "$@" --host-evidence-v1 "$host_evidence"
 fi
 
-container_launcher=$(ct_launcher_path ct_instance_exec.sh)
-
-# The runtime normally mounts HOME, which covers the default state root. A
-# custom root outside HOME must be visible at the same absolute path so separate
-# host invocations share the lifecycle fence, state, and broker control socket.
-state_bind=()
-home_real=$(realpath -m -- "$HOME")
-state_real=$(realpath -m -- "$state_home")
-case "$state_real/" in
-  "$home_real/"*) ;;
-  *)
-    [[ -d $state_home ]] || die "external XDG_STATE_HOME must be an existing directory for an identical host/image bind: $state_home"
-    state_bind=(--ct-bind "$state_home:$state_home")
-    ;;
-esac
-
-mkdir -p -- "$runtime_dir" "$cache_dir" "$npm_base"
-
-exec "$container_launcher" "--$runtime" \
-  --ct-instance-root "$runtime_dir/container-instances" \
-  --ct-bind "$npm_base:$npm_container_base" \
-  "${state_bind[@]}" \
-  --ct-env "MKCHAD_PERSISTENT_INSTANCE=1" \
-  --ct-env "MKCHAD_NVIM_IMAGE=1" \
-  --ct-env "NVIM_APPNAME=mkchad" \
-  --ct-env "XDG_CONFIG_HOME=$config_home" \
-  --ct-env "XDG_STATE_HOME=$state_home" \
-  --ct-env "XDG_RUNTIME_DIR=$runtime_dir" \
-  --ct-env "XDG_CACHE_HOME=$cache_dir" \
-  --ct-env "MSK_NPM_GLOBAL_BASE=$npm_container_base" \
-  --ct-env "OPENCODE_CONFIG=$opencode_config" \
-  --ct-bootstrap "$bootstrap" \
-  -- "$image" "$image_command" "$@"
+mkchad_persistent_exec "$runtime" "$image" "$image_command" "$@"

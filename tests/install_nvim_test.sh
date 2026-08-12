@@ -51,7 +51,7 @@ HOME="$home" bash "$installer" --check >/dev/null
 }
 
 HOME="$home" bash "$installer" >/dev/null
-[[ -x $target/nvim && -x $target/nvim_clear_npm_global && -x $target/ct_launcher.sh \
+[[ -x $target/nvim && -x $target/nvim_clear_npm_global && -x $target/nvim_library.sh && -x $target/ct_launcher.sh \
   && ! -e $target/ct_exec.sh ]] || {
   printf '%s\n' 'installer did not install only the launcher set' >&2
   exit 1

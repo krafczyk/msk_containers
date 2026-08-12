@@ -42,6 +42,26 @@ packages fail without falling back to co-located tools. An unset or empty
 dispatch, not MkChad launchers, bootstrap scripts, image lifecycle commands, or
 configuration, cache, state, and persistent-instance paths.
 
+## Persistent MkChad Profile
+
+`nvim`, `nvim_shell`, `mkchad`, and host `mkchad-opencode-server` select
+SingularityCE before Apptainer when both are installed. `mkchad` and host
+`mkchad-opencode-server start`, `stop`, `clear`, and `kill` use one persistent
+container profile: they bind the writable npm base and an external
+`XDG_STATE_HOME` at the same path, inject the same MkChad XDG environment, and
+run `mkchad-container-bootstrap` so the image selects its architecture and
+Node-major npm prefix before the payload starts. Payload command and arguments
+do not select a separate persistent instance.
+
+The shared profile forms its identity from `$HOME` rather than the caller's
+working directory, preventing caller-directory automatic mounts from creating
+a different persistent instance. The bootstrap restores each payload's caller
+working directory before execution, so relative editor paths retain their
+normal meaning when that directory is visible through the common mount plan.
+`mkchad-opencode-server status` remains a foreground diagnostic path and does
+not share or create a persistent instance. Its host evidence reports the
+selected runtime family and the identity of the exact selected executable.
+
 ## Release Deployer Handoff
 
 The schema-2 deployer calls the pinned `msk_containers` checkout with a fresh,

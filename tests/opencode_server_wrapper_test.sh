@@ -43,6 +43,11 @@ ln -s "${image_target##*/}" "$image"
 : > "$mount_config"
 HOME="$home" "$installer" >/dev/null
 package_bin=$(realpath "$bin")
+real_container_tools="$work/container-tools-build"
+cmake -S "$repo/container_tools" -B "$real_container_tools" \
+  -D CMAKE_BUILD_TYPE=Release -D CONTAINER_TOOLS_STATIC=OFF >/dev/null
+cmake --build "$real_container_tools" >/dev/null
+real_container_tools="$real_container_tools/container-tools"
 for launcher in container-tools ct_exec.sh ct_shell.sh ct_instance_exec.sh ct_mount_detector.sh ct_args.sh; do
   printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$bin/$launcher"
   chmod 755 "$bin/$launcher"
@@ -56,9 +61,19 @@ if [[ ${1:-} == --version ]]; then
 fi
 exit 64
 EOF
+cat > "$fake/singularity-real" <<'EOF'
+#!/usr/bin/env bash
+if [[ ${1:-} == --version ]]; then
+  printf '%s\n' 'singularity-ce version 4.2.1'
+  exit 0
+fi
+exit 64
+EOF
+ln -s singularity-real "$fake/singularity"
 cat > "$bin/ct_instance_exec.sh" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$@" > "$MKCHAD_TEST_RUNTIME_LOG"
+[[ -z ${MKCHAD_TEST_LAUNCHER_CWD_LOG:-} ]] || printf '%s\n' "$PWD" > "$MKCHAD_TEST_LAUNCHER_CWD_LOG"
 printf 'ct_instance_exec:%s\n' "$0" >> "$HOME/launcher.log"
 printf 'mount_config=%s\n' "${CT_MOUNT_CFG:-}" >> "$MKCHAD_TEST_RUNTIME_LOG"
 exit 23
@@ -97,8 +112,31 @@ cat > "$fake/node" <<'EOF'
 [[ ${1:-} == -p ]] || exit 64
 printf '%s\n' 'linux-x64-node24'
 EOF
-chmod 755 "$fake/apptainer" "$fake/nvim" "$fake/node" "$bin/ct_instance_exec.sh" "$bin/ct_exec.sh" \
+chmod 755 "$fake/apptainer" "$fake/singularity-real" "$fake/nvim" "$fake/node" "$bin/ct_instance_exec.sh" "$bin/ct_exec.sh" \
   "$alternate_tools/ct_instance_exec.sh" "$alternate_tools/ct_exec.sh"
+
+persistent_profile() {
+  local argument
+  while IFS= read -r argument; do
+    [[ $argument == -- ]] && break
+    if [[ $argument == --ct-env ]]; then
+      IFS= read -r argument || return 1
+      continue
+    fi
+    printf '%s\0' "$argument"
+  done < "$1"
+}
+
+persistent_identity() {
+  local log=$1
+  local -a arguments
+  mapfile -t arguments < "$log"
+  (
+    cd "$home"
+    env HOME="$home" XDG_STATE_HOME="$state_default" PATH="$fake:$PATH" \
+      CT_MOUNT_CFG="$mount_config" "$real_container_tools" instance identity "${arguments[@]}"
+  )
+}
 
 base_env=(
   "HOME=$home"
@@ -132,7 +170,7 @@ set -e
   printf '%s\n' 'unset CT_ROOT did not use the installed co-located foreground launcher' >&2; exit 1;
 }
 mapfile -t runtime_argv < "$status_log"
-[[ ${runtime_argv[0]} == --apptainer \
+[[ ${runtime_argv[0]} == --singularity \
   && ${runtime_argv[1]} == --ct-bind && ${runtime_argv[2]} == "$config:$config:ro" \
   && ${runtime_argv[3]} == --ct-env && ${runtime_argv[4]} == MKCHAD_NVIM_IMAGE=1 \
   && ${runtime_argv[5]} == --ct-env && ${runtime_argv[6]} == NVIM_APPNAME=mkchad \
@@ -148,9 +186,10 @@ mapfile -t runtime_argv < "$status_log"
   && ${runtime_argv[25]} == --json && ${runtime_argv[26]} == --host-evidence-v1 ]] || {
   printf '%s\n' 'status foreground transport argv changed' >&2; exit 1;
 }
-python3 - "${runtime_argv[27]}" <<'PY'
+python3 - "${runtime_argv[27]}" "$fake/singularity-real" <<'PY'
 import base64
 import json
+import os
 import sys
 
 encoded = sys.argv[1]
@@ -158,7 +197,11 @@ assert len(encoded) <= 6144 and "=" not in encoded
 payload = json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)))
 assert payload["schema"] == 1
 assert payload["container_runtime"]["state"] == "present"
-assert payload["container_runtime"]["family"] == "apptainer"
+assert payload["container_runtime"]["family"] == "singularity"
+expected_runtime = os.stat(sys.argv[2])
+assert payload["container_runtime"]["executable_identity"].split(":", 3)[:2] == [
+    str(expected_runtime.st_dev), str(expected_runtime.st_ino)
+]
 assert payload["selected_image"]["identity_kind"] == "host-file-stat-v1"
 assert payload["persisted_instance"] == {"state": "absent"}
 assert all("/" not in str(value) for value in payload.values())
@@ -326,11 +369,11 @@ assert read(sys.argv[2])["selected_image"] == {"state": "unavailable"}
 assert read(sys.argv[3])["selected_image"] == {"state": "unavailable"}
 PY
 
-cat > "$fake/apptainer" <<'EOF'
+cat > "$fake/singularity" <<'EOF'
 #!/usr/bin/env bash
 sleep 5
 EOF
-chmod 755 "$fake/apptainer"
+chmod 755 "$fake/singularity"
 SECONDS=0
 set +e
 env -u SINGULARITY_CONTAINER -u APPTAINER_CONTAINER "${base_env[@]}" "$installed_wrapper" status --json
@@ -377,26 +420,77 @@ set -e
   printf '%s\n' 'MkChad launcher did not use CT_ROOT for persistent dispatch' >&2; exit 1;
 }
 mapfile -t mkchad_runtime_argv < "$runtime_log"
-[[ ${mkchad_runtime_argv[0]} == --apptainer \
+[[ ${mkchad_runtime_argv[0]} == --singularity \
   && ${mkchad_runtime_argv[1]} == --ct-instance-root \
   && ${mkchad_runtime_argv[2]} == "$home/.local/share/mkchad/tmp/container-instances" \
-  && ${mkchad_runtime_argv[5]} == --ct-env \
-  && ${mkchad_runtime_argv[6]} == MKCHAD_PERSISTENT_INSTANCE=1 \
-  && ${mkchad_runtime_argv[15]} == --ct-env \
-  && ${mkchad_runtime_argv[16]} == MSK_NPM_GLOBAL_BASE=/opt/msk/npm-global \
-  && ${mkchad_runtime_argv[17]} == --ct-env \
-  && ${mkchad_runtime_argv[18]} == "OPENCODE_CONFIG=$home/.config/mkchad/opencode.jsonc" \
-  && ${mkchad_runtime_argv[19]} == -- \
-  && ${mkchad_runtime_argv[20]} == "$image" \
-  && ${mkchad_runtime_argv[21]} == nvim \
-  && ${mkchad_runtime_argv[22]} == 'file with spaces' ]] || {
+  && ${mkchad_runtime_argv[5]} == --ct-env && ${mkchad_runtime_argv[6]} == MKCHAD_PERSISTENT_INSTANCE=1 \
+  && ${mkchad_runtime_argv[13]} == --ct-env && ${mkchad_runtime_argv[14]} == "XDG_STATE_HOME=$state_default" \
+  && ${mkchad_runtime_argv[21]} == --ct-env && ${mkchad_runtime_argv[22]} == MSK_NPM_GLOBAL_BASE=/opt/msk/npm-global \
+  && ${mkchad_runtime_argv[23]} == --ct-env && ${mkchad_runtime_argv[24]} == "OPENCODE_CONFIG=$config/mkchad/opencode.jsonc" \
+  && ${mkchad_runtime_argv[25]} == --ct-bootstrap && ${mkchad_runtime_argv[26]} == "$package_bin/mkchad-container-bootstrap" \
+  && ${mkchad_runtime_argv[27]} == -- && ${mkchad_runtime_argv[28]} == "$image" \
+  && ${mkchad_runtime_argv[29]} == --mkchad-payload-cwd \
+  && ${mkchad_runtime_argv[31]} == -- && ${mkchad_runtime_argv[32]} == --mkchad-nvim \
+  && ${mkchad_runtime_argv[33]} == 'file with spaces' ]] || {
   printf '%s\n' 'MkChad launcher did not use the shared persistent instance contract' >&2; exit 1;
 }
-for argument in "${mkchad_runtime_argv[@]}"; do
-  [[ $argument != --ct-bootstrap ]] || {
-    printf '%s\n' 'MkChad launcher selected the npm prefix before MkChad initialization' >&2; exit 1;
-  }
-done
+
+server_cwd="$work/server-cwd"
+editor_cwd="$work/editor-[cwd],(punctuation)"
+server_cwd_log="$work/server-cwd.log"
+editor_cwd_log="$work/editor-cwd.log"
+mkdir "$server_cwd" "$editor_cwd"
+set +e
+(
+  cd "$server_cwd"
+  env -u SINGULARITY_CONTAINER -u APPTAINER_CONTAINER "${base_env[@]}" \
+    MKCHAD_TEST_LAUNCHER_CWD_LOG="$server_cwd_log" CT_ROOT="$alternate_link" \
+    "$installed_wrapper" start --json
+)
+server_profile_status=$?
+set -e
+[[ $server_profile_status -eq 23 ]] || {
+  printf '%s\n' 'server launch did not reach the persistent executor' >&2; exit 1;
+}
+cp "$runtime_log" "$work/server-persistent-profile.log"
+
+set +e
+(
+  cd "$editor_cwd"
+  env -u SINGULARITY_CONTAINER -u APPTAINER_CONTAINER "${base_env[@]}" \
+    MKCHAD_TEST_LAUNCHER_CWD_LOG="$editor_cwd_log" CT_ROOT="$alternate_link" \
+    "$installed_mkchad" 'file with spaces'
+)
+editor_profile_status=$?
+set -e
+[[ $editor_profile_status -eq 23 ]] || {
+  printf '%s\n' 'MkChad launch did not reach the persistent executor' >&2; exit 1;
+}
+cp "$runtime_log" "$work/editor-persistent-profile.log"
+
+cmp <(persistent_profile "$work/server-persistent-profile.log") \
+  <(persistent_profile "$work/editor-persistent-profile.log") || {
+  printf '%s\n' 'server and editor persistent profile arguments differ' >&2; exit 1;
+}
+server_identity=$(persistent_identity "$work/server-persistent-profile.log")
+editor_identity=$(persistent_identity "$work/editor-persistent-profile.log")
+[[ $server_identity =~ ^[0-9a-f]{64}$ && $editor_identity == "$server_identity" ]] || {
+  printf '%s\n' 'server and editor did not produce the same container-tools identity' >&2; exit 1;
+}
+[[ $(<"$server_cwd_log") == $(<"$editor_cwd_log") ]] || {
+  printf '%s\n' 'server and editor persistent profile CWD differs' >&2; exit 1;
+}
+[[ $(<"$server_cwd_log") == "$home" && $(<"$editor_cwd_log") == "$home" ]] || {
+  printf '%s\n' 'shared persistent profile did not use the canonical launcher CWD' >&2; exit 1;
+}
+mapfile -t editor_profile_argv < "$work/editor-persistent-profile.log"
+[[ " ${editor_profile_argv[*]} " == *" --mkchad-payload-cwd $editor_cwd -- --mkchad-nvim "* ]] || {
+  printf '%s\n' 'MkChad payload did not retain its caller working directory' >&2; exit 1;
+}
+mapfile -t server_profile_argv < "$work/server-persistent-profile.log"
+[[ " ${server_profile_argv[*]} " == *" --mkchad-payload-cwd $server_cwd -- $package_bin/mkchad-opencode-server-image "* ]] || {
+  printf '%s\n' 'server payload did not retain its caller working directory' >&2; exit 1;
+}
 
 custom_state="$work/state root"
 mkdir -p "$custom_state"
@@ -411,16 +505,88 @@ set -e
   printf '%s\n' 'persistent server dispatch did not use CT_ROOT' >&2; exit 1;
 }
 mapfile -t custom_runtime_argv < "$runtime_log"
-[[ ${custom_runtime_argv[0]} == --apptainer \
+[[ ${custom_runtime_argv[0]} == --singularity \
   && ${custom_runtime_argv[3]} == --ct-bind \
   && ${custom_runtime_argv[4]} == "$home/.local/share/msk_containers/npm-global:/opt/msk/npm-global" \
   && ${custom_runtime_argv[5]} == --ct-bind \
   && ${custom_runtime_argv[6]} == "$custom_state:$custom_state" \
   && ${custom_runtime_argv[15]} == --ct-env \
   && ${custom_runtime_argv[16]} == "XDG_STATE_HOME=$custom_state" \
-  && ${custom_runtime_argv[30]} == start && ${custom_runtime_argv[31]} == --json ]] || {
+  && ${custom_runtime_argv[25]} == --ct-env \
+  && ${custom_runtime_argv[26]} == "OPENCODE_CONFIG=$config/mkchad/opencode.jsonc" \
+  && ${custom_runtime_argv[27]} == --ct-bootstrap \
+  && ${custom_runtime_argv[35]} == start && ${custom_runtime_argv[36]} == --json ]] || {
   printf '%s\n' 'custom state root was not forwarded and bound identically' >&2; exit 1;
 }
+cp "$runtime_log" "$work/custom-server-persistent-profile.log"
+set +e
+env -u SINGULARITY_CONTAINER -u APPTAINER_CONTAINER "${base_env[@]}" \
+  "XDG_STATE_HOME=$custom_state" CT_ROOT="$alternate_link" \
+  "$installed_mkchad" 'custom state file'
+custom_editor_status=$?
+set -e
+[[ $custom_editor_status -eq 23 ]] || {
+  printf '%s\n' 'custom state MkChad launch did not reach the persistent executor' >&2; exit 1;
+}
+cmp <(persistent_profile "$work/custom-server-persistent-profile.log") \
+  <(persistent_profile "$runtime_log") || {
+  printf '%s\n' 'custom state server and editor persistent profile arguments differ' >&2; exit 1;
+}
+
+mv "$fake/singularity" "$fake/singularity.disabled"
+set +e
+env -u SINGULARITY_CONTAINER -u APPTAINER_CONTAINER "${base_env[@]}" \
+  "$installed_wrapper" status --json
+apptainer_status_status=$?
+set -e
+[[ $apptainer_status_status -eq 19 ]] || {
+  printf '%s\n' 'Apptainer-only status did not use the foreground executor' >&2; exit 1;
+}
+mapfile -t apptainer_status_argv < "$status_log"
+[[ ${apptainer_status_argv[0]} == --apptainer ]] || {
+  printf '%s\n' 'Apptainer-only status selected the wrong backend' >&2; exit 1;
+}
+apptainer_status_evidence=
+for ((index = 0; index < ${#apptainer_status_argv[@]} - 1; index++)); do
+  if [[ ${apptainer_status_argv[index]} == --host-evidence-v1 ]]; then
+    apptainer_status_evidence=${apptainer_status_argv[index + 1]}
+    break
+  fi
+done
+python3 - "$apptainer_status_evidence" <<'PY'
+import base64
+import json
+import sys
+
+payload = json.loads(base64.urlsafe_b64decode(sys.argv[1] + "=" * (-len(sys.argv[1]) % 4)))
+assert payload["container_runtime"]["state"] == "present"
+assert payload["container_runtime"]["family"] == "apptainer"
+PY
+set +e
+env -u SINGULARITY_CONTAINER -u APPTAINER_CONTAINER "${base_env[@]}" \
+  CT_ROOT="$alternate_link" "$installed_wrapper" start --json
+apptainer_server_status=$?
+set -e
+[[ $apptainer_server_status -eq 23 ]] || {
+  printf '%s\n' 'Apptainer-only server launch did not reach the persistent executor' >&2; exit 1;
+}
+mapfile -t apptainer_server_argv < "$runtime_log"
+[[ ${apptainer_server_argv[0]} == --apptainer ]] || {
+  printf '%s\n' 'Apptainer-only server launch selected the wrong backend' >&2; exit 1;
+}
+set +e
+env -u SINGULARITY_CONTAINER -u APPTAINER_CONTAINER "${base_env[@]}" \
+  CT_ROOT="$alternate_link" "$installed_mkchad" 'apptainer file'
+apptainer_editor_status=$?
+set -e
+[[ $apptainer_editor_status -eq 23 ]] || {
+  printf '%s\n' 'Apptainer-only MkChad launch did not reach the persistent executor' >&2; exit 1;
+}
+mapfile -t apptainer_editor_argv < "$runtime_log"
+[[ ${apptainer_editor_argv[0]} == --apptainer ]] || {
+  printf '%s\n' 'Apptainer-only MkChad launch selected the wrong backend' >&2; exit 1;
+}
+mv "$fake/singularity.disabled" "$fake/singularity"
 
 missing_state="$work/missing state"
 set +e

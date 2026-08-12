@@ -37,5 +37,9 @@ export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-$runtime_dir}"
 export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$cache_dir}"
 export MSK_NPM_GLOBAL_BASE="${MSK_NPM_GLOBAL_BASE:-$npm_container_base}"
 export OPENCODE_CONFIG="${OPENCODE_CONFIG:-$opencode_config}"
-command -v nvim >/dev/null 2>&1 || die "container Neovim is unavailable"
-exec nvim -u NONE -l "$entrypoint" -- "$@"
+nvim_executable=${MKCHAD_NVIM_EXECUTABLE:-}
+if [[ -z $nvim_executable ]]; then
+  nvim_executable=$(command -v nvim 2>/dev/null) || nvim_executable=
+fi
+[[ $nvim_executable == /* && -x $nvim_executable ]] || die "container Neovim is unavailable"
+exec "$nvim_executable" -u NONE -l "$entrypoint" -- "$@"

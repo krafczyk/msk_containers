@@ -47,6 +47,10 @@ cat > "$fake/apptainer" <<'EOF'
 #!/usr/bin/env bash
 exit 64
 EOF
+cat > "$fake/singularity" <<'EOF'
+#!/usr/bin/env bash
+exit 64
+EOF
 cat > "$fake/node" <<'EOF'
 #!/usr/bin/env bash
 [[ ${1:-} == -p ]] || exit 64
@@ -91,7 +95,7 @@ printf '%s\\n' "side-installed:$node_global_key:\${NPM_CONFIG_PREFIX}:\${MSK_NPM
 EOF
   chmod 755 "$npm_base/$node_global_key/bin/opencode"
 done
-chmod 755 "$fake/apptainer" "$fake/node" "$fake/opencode"
+chmod 755 "$fake/apptainer" "$fake/singularity" "$fake/node" "$fake/opencode"
 
 set +e
 env -u CT_ROOT HOME="$home" XDG_DATA_HOME="$home/data" NVIM_CONT_LOCATION="$image" \
@@ -102,7 +106,7 @@ set -e
 [[ $status -eq 23 ]] || { printf '%s\n' 'nvim_shell did not use ct_shell.sh' >&2; exit 1; }
 
 mapfile -t argv < "$runtime_log"
-[[ ${argv[0]} == --apptainer \
+[[ ${argv[0]} == --singularity \
   && ${argv[1]} == --ct-bind && ${argv[2]} == "$npm_base:/opt/msk/npm-global" \
   && ${argv[3]} == --ct-env && ${argv[4]} == MSK_NPM_GLOBAL_BASE=/opt/msk/npm-global \
   && ${argv[5]} == --ct-bootstrap && ${argv[6]} == "$package_bin/mkchad-container-bootstrap" \
@@ -115,6 +119,31 @@ mapfile -t argv < "$runtime_log"
   printf '%s\n' 'unset CT_ROOT did not use the installed co-located shell launcher' >&2
   exit 1
 }
+
+mv "$fake/singularity" "$fake/singularity.disabled"
+set +e
+HOME="$home" XDG_DATA_HOME="$home/data" NVIM_CONT_LOCATION="$image" \
+  MKCHAD_TEST_RUNTIME_LOG="$runtime_log" MKCHAD_TEST_LAUNCHER_LOG="$launcher_log" \
+  SHELL=/missing/host-shell PATH="$fake:$PATH" "$bin/nvim_shell"
+apptainer_shell_status=$?
+set -e
+mapfile -t apptainer_shell_argv < "$runtime_log"
+[[ $apptainer_shell_status -eq 23 && ${apptainer_shell_argv[0]} == --apptainer ]] || {
+  printf '%s\n' 'Apptainer-only nvim_shell launch selected the wrong backend' >&2
+  exit 1
+}
+set +e
+HOME="$home" NVIM_CONT_LOCATION="$image" MKCHAD_TEST_RUNTIME_LOG="$runtime_log" \
+  MKCHAD_TEST_LAUNCHER_LOG="$launcher_log" CT_ROOT="$alternate_link" PATH="$fake:$PATH" \
+  "$bin/nvim" 'apptainer file'
+apptainer_nvim_status=$?
+set -e
+mapfile -t apptainer_nvim_argv < "$runtime_log"
+[[ $apptainer_nvim_status -eq 26 && ${apptainer_nvim_argv[0]} == --apptainer ]] || {
+  printf '%s\n' 'Apptainer-only nvim launch selected the wrong backend' >&2
+  exit 1
+}
+mv "$fake/singularity.disabled" "$fake/singularity"
 
 rm -f "$runtime_log" "$launcher_log"
 set +e
@@ -140,7 +169,7 @@ set -e
   exit 1
 }
 mapfile -t nvim_argv < "$runtime_log"
-[[ ${nvim_argv[0]} == --apptainer && ${nvim_argv[1]} == "$image" \
+[[ ${nvim_argv[0]} == --singularity && ${nvim_argv[1]} == "$image" \
   && ${nvim_argv[2]} == nvim && ${nvim_argv[3]} == 'file with spaces' ]] || {
   printf '%s\n' 'nvim did not preserve its container launch payload' >&2
   exit 1
@@ -222,5 +251,17 @@ for index in "${!node_platforms[@]}"; do
     exit 1
   }
 done
+
+payload_cwd="$work/payload-cwd"
+mkdir "$payload_cwd"
+payload_pwd=$(MSK_NPM_GLOBAL_BASE="$npm_base" \
+  MKCHAD_TEST_NODE_PLATFORM=linux \
+  MKCHAD_TEST_NODE_ARCH=x64 \
+  MKCHAD_TEST_NODE_VERSION=24.18.0 PATH="$fake:$PATH" \
+  "$bin/mkchad-container-bootstrap" --mkchad-payload-cwd "$payload_cwd" -- pwd)
+[[ $payload_pwd == "$payload_cwd" ]] || {
+  printf '%s\n' 'container bootstrap did not restore the payload working directory' >&2
+  exit 1
+}
 
 printf '%s\n' 'nvim_shell wrapper tests passed'

@@ -1,21 +1,26 @@
-# Check if Singularity is installed
-if command -v singularity &> /dev/null; then
-    echo "Singularity found. Running Singularity container."
-    export TOOL="singularity"
-# If Singularity is not installed, check if Docker is installed
-elif command -v apptainer &> /dev/null; then
-    echo "Apptainer found. Running Docker container."
-    export TOOL="apptainer"
-# If neither Singularity nor Docker is installed, exit with an error message
-else
-    echo "Neither Singularity nor Apptainer are installed. Please install one of them."
-    exit 1
-fi
+#!/usr/bin/env bash
 
-NVIM_CONT_LOCATION="${NVIM_CONT_LOCATION:=${HOME}/containers/neovim.sif}"
-# Check if the file $NVIM_CONT_LOCATION exists
-if [ ! -f $NVIM_CONT_LOCATION ]; then
-  # Present an error message and exit if the file does not exist
-  echo "The container file $NVIM_CONT_LOCATION does not exist."
-  exit 1
-fi
+# Select SingularityCE or fall back to Apptainer. On success, export the
+# canonical backend, selected executable, and compatibility TOOL name. Return
+# nonzero without side effects when neither backend is available.
+nvim_select_container_backend() {
+  if NVIM_CONTAINER_RUNTIME_EXECUTABLE=$(command -v singularity 2>/dev/null); then
+    NVIM_CONTAINER_RUNTIME=singularity
+  elif NVIM_CONTAINER_RUNTIME_EXECUTABLE=$(command -v apptainer 2>/dev/null); then
+    NVIM_CONTAINER_RUNTIME=apptainer
+  else
+    return 1
+  fi
+
+  export NVIM_CONTAINER_RUNTIME NVIM_CONTAINER_RUNTIME_EXECUTABLE TOOL=$NVIM_CONTAINER_RUNTIME
+}
+
+# Select NVIM_CONT_LOCATION or its HOME-relative default. Return nonzero with a
+# diagnostic when the selected image is not a regular file.
+nvim_require_container_image() {
+  NVIM_CONT_LOCATION=${NVIM_CONT_LOCATION:-"$HOME/containers/neovim.sif"}
+  if [[ ! -f $NVIM_CONT_LOCATION ]]; then
+    printf 'The container file %s does not exist.\n' "$NVIM_CONT_LOCATION" >&2
+    return 1
+  fi
+}

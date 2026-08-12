@@ -7,6 +7,12 @@ script_dir=$(dirname "$(realpath "$0")")
 . "$script_dir/ct_launcher.sh"
 . "$script_dir/nvim_library.sh"
 
+nvim_select_container_backend || {
+  printf '%s\n' 'Neither SingularityCE nor Apptainer is available. Please install one of them.' >&2
+  exit 1
+}
+nvim_require_container_image || exit $?
+
 msk_npm_global_base="$HOME/.local/share/msk_containers/npm-global"
 msk_npm_container_base=/opt/msk/npm-global
 
