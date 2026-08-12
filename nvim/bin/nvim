@@ -3,6 +3,7 @@
 script_dir=$(dirname "$(realpath "$0")")
 
 . "$script_dir/ct_launcher.sh"
+. "$script_dir/mkchad-persistent-launcher.sh"
 . "$script_dir/nvim_library.sh"
 
 nvim_select_container_backend || {
@@ -11,11 +12,14 @@ nvim_select_container_backend || {
 }
 nvim_require_container_image || exit $?
 
-env_args=()
-if [ -n "${NVIM_APPNAME:-}" ]; then
-  env_args+=(--env "NVIM_APPNAME=${NVIM_APPNAME}")
+if [[ -n ${NVIM_APPNAME:-} ]]; then
+  appname_mode='set'
+  appname=$NVIM_APPNAME
+else
+  appname_mode='unset'
+  appname=
 fi
 
-# Launch the selected native container backend.
-ct_exec=$(ct_launcher_path ct_exec.sh) || exit $?
-"$ct_exec" "--$TOOL" "${env_args[@]}" "$NVIM_CONT_LOCATION" nvim "$@"
+# Keep generic Neovim selection in the payload, not the shared profile.
+mkchad_persistent_exec "$NVIM_CONTAINER_RUNTIME" "$NVIM_CONT_LOCATION" \
+  --mkchad-generic-nvim "$appname_mode" "$appname" -- "$@"

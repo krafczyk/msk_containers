@@ -14,6 +14,7 @@ image="$work/neovim.sif"
 runtime_log="$work/runtime.log"
 launcher_log="$work/launcher.log"
 npm_base="$home/.local/share/msk_containers/npm-global"
+export XDG_STATE_HOME="$home/.local/state"
 repo=${wrapper%/nvim/bin/nvim_shell}
 installer="$repo/bin/install_nvim.sh"
 export CONTAINER_TOOLS_HOST_PACKAGE_ARCHIVE=${CONTAINER_TOOLS_HOST_PACKAGE_ARCHIVE:?pass the verified host package archive}
@@ -70,11 +71,11 @@ exit $status
 EOF
   chmod 755 "$path"
 }
-write_launcher_stub "$bin/ct_shell.sh" 23
+write_launcher_stub "$bin/ct_instance_exec.sh" 23
 write_launcher_stub "$bin/ct_exec.sh" 24
-write_launcher_stub "$alternate_tools/ct_shell.sh" 25
+write_launcher_stub "$alternate_tools/ct_instance_exec.sh" 25
 write_launcher_stub "$alternate_tools/ct_exec.sh" 26
-for launcher in container-tools ct_instance_exec.sh ct_mount_detector.sh ct_args.sh; do
+for launcher in container-tools ct_shell.sh ct_mount_detector.sh ct_args.sh; do
   printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$alternate_tools/$launcher"
   chmod 755 "$alternate_tools/$launcher"
 done
@@ -103,20 +104,26 @@ env -u CT_ROOT HOME="$home" XDG_DATA_HOME="$home/data" NVIM_CONT_LOCATION="$imag
   SHELL=/missing/host-shell PATH="$fake:$PATH" "$bin/nvim_shell"
 status=$?
 set -e
-[[ $status -eq 23 ]] || { printf '%s\n' 'nvim_shell did not use ct_shell.sh' >&2; exit 1; }
+[[ $status -eq 23 ]] || { printf '%s\n' 'nvim_shell did not use ct_instance_exec.sh' >&2; exit 1; }
 
 mapfile -t argv < "$runtime_log"
+argc=${#argv[@]}
 [[ ${argv[0]} == --singularity \
-  && ${argv[1]} == --ct-bind && ${argv[2]} == "$npm_base:/opt/msk/npm-global" \
-  && ${argv[3]} == --ct-env && ${argv[4]} == MSK_NPM_GLOBAL_BASE=/opt/msk/npm-global \
-  && ${argv[5]} == --ct-bootstrap && ${argv[6]} == "$package_bin/mkchad-container-bootstrap" \
-  && ${argv[7]} == --ct-container-shell && ${argv[8]} == /bin/bash \
-  && ${argv[9]} == -- && ${argv[10]} == "$image" ]] || {
+  && ${argv[1]} == --ct-instance-root && ${argv[2]} == "$home/.local/share/mkchad/tmp/container-instances" \
+  && ${argv[3]} == --ct-bind && ${argv[4]} == "$npm_base:/opt/msk/npm-global" \
+  && ${argv[5]} == --ct-env && ${argv[6]} == MKCHAD_PERSISTENT_INSTANCE=1 \
+  && ${argv[7]} == --ct-env && ${argv[8]} == MKCHAD_NVIM_IMAGE=1 \
+  && ${argv[9]} == --ct-env && ${argv[10]} == NVIM_APPNAME=mkchad \
+  && ${argv[argc - 9]} == --ct-bootstrap && ${argv[argc - 8]} == "$package_bin/mkchad-container-bootstrap" \
+  && ${argv[argc - 7]} == -- && ${argv[argc - 6]} == "$image" \
+  && ${argv[argc - 5]} == --mkchad-payload-cwd && ${argv[argc - 4]} == "$PWD" \
+  && ${argv[argc - 3]} == -- && ${argv[argc - 2]} == --mkchad-generic-shell \
+  && ${argv[argc - 1]} == -- ]] || {
   printf '%s\n' 'nvim_shell did not preserve the MkChad image launch contract' >&2
   exit 1
 }
-[[ $(<"$launcher_log") == "$package_bin/ct_shell.sh" ]] || {
-  printf '%s\n' 'unset CT_ROOT did not use the installed co-located shell launcher' >&2
+[[ $(<"$launcher_log") == "$package_bin/ct_instance_exec.sh" ]] || {
+  printf '%s\n' 'unset CT_ROOT did not use the installed co-located persistent launcher' >&2
   exit 1
 }
 
@@ -139,7 +146,7 @@ HOME="$home" NVIM_CONT_LOCATION="$image" MKCHAD_TEST_RUNTIME_LOG="$runtime_log" 
 apptainer_nvim_status=$?
 set -e
 mapfile -t apptainer_nvim_argv < "$runtime_log"
-[[ $apptainer_nvim_status -eq 26 && ${apptainer_nvim_argv[0]} == --apptainer ]] || {
+[[ $apptainer_nvim_status -eq 25 && ${apptainer_nvim_argv[0]} == --apptainer ]] || {
   printf '%s\n' 'Apptainer-only nvim launch selected the wrong backend' >&2
   exit 1
 }
@@ -152,8 +159,8 @@ HOME="$home" XDG_DATA_HOME="$home/data" NVIM_CONT_LOCATION="$image" \
   CT_ROOT='' SHELL=/missing/host-shell PATH="$fake:$PATH" "$bin/nvim_shell"
 status=$?
 set -e
-[[ $status -eq 23 && $(<"$launcher_log") == "$package_bin/ct_shell.sh" ]] || {
-  printf '%s\n' 'empty CT_ROOT did not use the installed co-located shell launcher' >&2
+[[ $status -eq 23 && $(<"$launcher_log") == "$package_bin/ct_instance_exec.sh" ]] || {
+  printf '%s\n' 'empty CT_ROOT did not use the installed co-located persistent launcher' >&2
   exit 1
 }
 
@@ -164,13 +171,14 @@ env -u NVIM_APPNAME HOME="$home" NVIM_CONT_LOCATION="$image" MKCHAD_TEST_RUNTIME
   "$bin/nvim" 'file with spaces'
 status=$?
 set -e
-[[ $status -eq 26 && $(<"$launcher_log") == "$alternate_tools/ct_exec.sh" ]] || {
+[[ $status -eq 25 && $(<"$launcher_log") == "$alternate_tools/ct_instance_exec.sh" ]] || {
   printf '%s\n' 'nvim did not honor the canonical checkout-shaped CT_ROOT' >&2
   exit 1
 }
 mapfile -t nvim_argv < "$runtime_log"
-[[ ${nvim_argv[0]} == --singularity && ${nvim_argv[1]} == "$image" \
-  && ${nvim_argv[2]} == nvim && ${nvim_argv[3]} == 'file with spaces' ]] || {
+[[ ${nvim_argv[0]} == --singularity \
+  && " ${nvim_argv[*]} " == *" -- $image --mkchad-payload-cwd "* \
+  && " ${nvim_argv[*]} " == *" -- --mkchad-generic-nvim unset  -- file with spaces "* ]] || {
   printf '%s\n' 'nvim did not preserve its container launch payload' >&2
   exit 1
 }
@@ -182,12 +190,13 @@ HOME="$home" XDG_DATA_HOME="$home/data" NVIM_CONT_LOCATION="$image" \
   CT_ROOT="$alternate_link" SHELL=/missing/host-shell PATH="$fake:$PATH" "$bin/nvim_shell"
 status=$?
 set -e
-[[ $status -eq 25 && $(<"$launcher_log") == "$alternate_tools/ct_shell.sh" ]] || {
+[[ $status -eq 25 && $(<"$launcher_log") == "$alternate_tools/ct_instance_exec.sh" ]] || {
   printf '%s\n' 'nvim_shell did not use the canonical checkout-shaped CT_ROOT' >&2
   exit 1
 }
 mapfile -t argv < "$runtime_log"
-[[ ${argv[6]} == "$package_bin/mkchad-container-bootstrap" ]] || {
+argc=${#argv[@]}
+[[ ${argv[argc - 8]} == "$package_bin/mkchad-container-bootstrap" ]] || {
   printf '%s\n' 'CT_ROOT redirected the launcher-relative container bootstrap' >&2
   exit 1
 }
@@ -261,6 +270,50 @@ payload_pwd=$(MSK_NPM_GLOBAL_BASE="$npm_base" \
   "$bin/mkchad-container-bootstrap" --mkchad-payload-cwd "$payload_cwd" -- pwd)
 [[ $payload_pwd == "$payload_cwd" ]] || {
   printf '%s\n' 'container bootstrap did not restore the payload working directory' >&2
+  exit 1
+}
+
+cat > "$fake/nvim" <<'EOF'
+#!/usr/bin/env bash
+printf 'appname=%s cwd=%s\n' "${NVIM_APPNAME-unset}" "$PWD"
+printf '%s\n' "$@"
+EOF
+chmod 755 "$fake/nvim"
+generic_nvim_output=$(MSK_NPM_GLOBAL_BASE="$npm_base" \
+  MKCHAD_TEST_NODE_PLATFORM=linux \
+  MKCHAD_TEST_NODE_ARCH=x64 \
+  MKCHAD_TEST_NODE_VERSION=24.18.0 PATH="$fake:$PATH" \
+  "$bin/mkchad-container-bootstrap" --mkchad-payload-cwd "$payload_cwd" -- \
+  --mkchad-generic-nvim set caller-nvim -- 'generic file')
+[[ $generic_nvim_output == $'appname=caller-nvim cwd='"$payload_cwd"$'\ngeneric file' ]] || {
+  printf '%s\n' 'generic nvim payload did not restore the caller app name and working directory' >&2
+  exit 1
+}
+generic_nvim_unset_output=$(NVIM_APPNAME=should-be-removed MSK_NPM_GLOBAL_BASE="$npm_base" \
+  MKCHAD_TEST_NODE_PLATFORM=linux \
+  MKCHAD_TEST_NODE_ARCH=x64 \
+  MKCHAD_TEST_NODE_VERSION=24.18.0 PATH="$fake:$PATH" \
+  "$bin/mkchad-container-bootstrap" --mkchad-generic-nvim unset '' -- 'generic file')
+[[ $generic_nvim_unset_output == $'appname=unset cwd='"$PWD"$'\ngeneric file' ]] || {
+  printf '%s\n' 'unset NVIM_APPNAME did not select generic nvim' >&2
+  exit 1
+}
+
+cat > "$fake/env" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$MKCHAD_TEST_ENV_LOG"
+exit 29
+EOF
+chmod 755 "$fake/env"
+set +e
+MSK_NPM_GLOBAL_BASE="$npm_base" MKCHAD_TEST_NODE_PLATFORM=linux \
+  MKCHAD_TEST_NODE_ARCH=x64 MKCHAD_TEST_NODE_VERSION=24.18.0 \
+  MKCHAD_TEST_ENV_LOG="$work/generic-shell-env.log" PATH="$fake:$PATH" \
+  "$bin/mkchad-container-bootstrap" --mkchad-generic-shell --
+generic_shell_status=$?
+set -e
+[[ $generic_shell_status -eq 29 && $(<"$work/generic-shell-env.log") == $'-u\nNVIM_APPNAME\n/bin/bash\n-i' ]] || {
+  printf '%s\n' 'generic shell payload did not start interactive /bin/bash without NVIM_APPNAME' >&2
   exit 1
 }
 

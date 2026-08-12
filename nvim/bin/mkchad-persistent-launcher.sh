@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 
-# Launch MkChad payloads through the persistent profile shared by the editor
-# and lifecycle wrapper. The first two arguments are the selected runtime and
-# image; remaining arguments are the payload. Failure is returned before exec,
-# while success replaces the caller with the persistent container dispatcher.
+# Launch a payload through the fixed persistent MkChad profile. The first two
+# parameters are the selected runtime and image; remaining arguments are the
+# payload passed to the bootstrap. Payload command, environment, and working
+# directory are deliberately after the profile separator and do not select an
+# instance. Returns nonzero before dispatch on invalid host setup; otherwise
+# replaces the caller with the persistent container dispatcher.
 mkchad_persistent_launcher_dir=$(dirname "$(realpath "${BASH_SOURCE[0]}")")
 mkchad_persistent_bootstrap="$mkchad_persistent_launcher_dir/mkchad-container-bootstrap"
 

@@ -5,6 +5,7 @@ set -euo pipefail
 script_dir=$(dirname "$(realpath "$0")")
 
 . "$script_dir/ct_launcher.sh"
+. "$script_dir/mkchad-persistent-launcher.sh"
 . "$script_dir/nvim_library.sh"
 
 nvim_select_container_backend || {
@@ -13,17 +14,7 @@ nvim_select_container_backend || {
 }
 nvim_require_container_image || exit $?
 
-msk_npm_global_base="$HOME/.local/share/msk_containers/npm-global"
-msk_npm_container_base=/opt/msk/npm-global
-
-mkdir -p "$msk_npm_global_base"
-
-# Apply the same writable side-installed tools as MkChad without changing the
-# generic shell's Neovim application or XDG environment.
-ct_shell=$(ct_launcher_path ct_shell.sh)
-exec "$ct_shell" "--$TOOL" \
-  --ct-bind "$msk_npm_global_base:$msk_npm_container_base" \
-  --ct-env "MSK_NPM_GLOBAL_BASE=$msk_npm_container_base" \
-  --ct-bootstrap "$script_dir/mkchad-container-bootstrap" \
-  --ct-container-shell /bin/bash \
-  -- "$NVIM_CONT_LOCATION"
+# The bootstrap removes the profile's MkChad app name before it starts this
+# interactive generic shell.
+mkchad_persistent_exec "$NVIM_CONTAINER_RUNTIME" "$NVIM_CONT_LOCATION" \
+  --mkchad-generic-shell --

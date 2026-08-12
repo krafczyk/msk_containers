@@ -22,6 +22,8 @@ nvim_log="$work/nvim.log"
 installed_wrapper="$bin/mkchad-opencode-server"
 installed_image_command="$bin/mkchad-opencode-server-image"
 installed_mkchad="$bin/mkchad"
+installed_nvim="$bin/nvim"
+installed_nvim_shell="$bin/nvim_shell"
 mount_config="$work/ct_mount.conf"
 repo=${wrapper%/nvim/bin/mkchad-opencode-server}
 installer="$repo/bin/install_nvim.sh"
@@ -437,9 +439,14 @@ mapfile -t mkchad_runtime_argv < "$runtime_log"
 
 server_cwd="$work/server-cwd"
 editor_cwd="$work/editor-[cwd],(punctuation)"
+generic_nvim_cwd="$work/generic-nvim-cwd"
+shell_cwd="$work/shell-cwd"
 server_cwd_log="$work/server-cwd.log"
 editor_cwd_log="$work/editor-cwd.log"
-mkdir "$server_cwd" "$editor_cwd"
+generic_nvim_cwd_log="$work/generic-nvim-cwd.log"
+shell_cwd_log="$work/shell-cwd.log"
+mkdir "$server_cwd" "$editor_cwd" "$generic_nvim_cwd" "$shell_cwd"
+: > "$launcher_log"
 set +e
 (
   cd "$server_cwd"
@@ -468,19 +475,62 @@ set -e
 }
 cp "$runtime_log" "$work/editor-persistent-profile.log"
 
+set +e
+(
+  cd "$generic_nvim_cwd"
+  env -u SINGULARITY_CONTAINER -u APPTAINER_CONTAINER "${base_env[@]}" \
+    NVIM_APPNAME=generic-nvim MKCHAD_TEST_LAUNCHER_CWD_LOG="$generic_nvim_cwd_log" CT_ROOT="$alternate_link" \
+    "$installed_nvim" 'generic file with spaces'
+)
+generic_nvim_profile_status=$?
+set -e
+[[ $generic_nvim_profile_status -eq 23 ]] || {
+  printf '%s\n' 'generic nvim launch did not reach the persistent executor' >&2; exit 1;
+}
+cp "$runtime_log" "$work/generic-nvim-persistent-profile.log"
+
+set +e
+(
+  cd "$shell_cwd"
+  env -u SINGULARITY_CONTAINER -u APPTAINER_CONTAINER -u NVIM_APPNAME "${base_env[@]}" \
+    MKCHAD_TEST_LAUNCHER_CWD_LOG="$shell_cwd_log" CT_ROOT="$alternate_link" "$installed_nvim_shell"
+)
+shell_profile_status=$?
+set -e
+[[ $shell_profile_status -eq 23 ]] || {
+  printf '%s\n' 'nvim_shell launch did not reach the persistent executor' >&2; exit 1;
+}
+cp "$runtime_log" "$work/nvim-shell-persistent-profile.log"
+
+mapfile -t persistent_dispatches < "$launcher_log"
+[[ ${#persistent_dispatches[@]} -eq 4 ]] || {
+  printf '%s\n' 'all four launchers did not dispatch one persistent executor call' >&2; exit 1;
+}
+for persistent_dispatch in "${persistent_dispatches[@]}"; do
+  [[ $persistent_dispatch == "ct_instance_exec:$alternate_tools/ct_instance_exec.sh" ]] || {
+    printf '%s\n' 'a persistent launcher did not dispatch ct_instance_exec.sh' >&2; exit 1;
+  }
+done
+
 cmp <(persistent_profile "$work/server-persistent-profile.log") \
   <(persistent_profile "$work/editor-persistent-profile.log") || {
   printf '%s\n' 'server and editor persistent profile arguments differ' >&2; exit 1;
 }
 server_identity=$(persistent_identity "$work/server-persistent-profile.log")
 editor_identity=$(persistent_identity "$work/editor-persistent-profile.log")
-[[ $server_identity =~ ^[0-9a-f]{64}$ && $editor_identity == "$server_identity" ]] || {
-  printf '%s\n' 'server and editor did not produce the same container-tools identity' >&2; exit 1;
+generic_nvim_identity=$(persistent_identity "$work/generic-nvim-persistent-profile.log")
+shell_identity=$(persistent_identity "$work/nvim-shell-persistent-profile.log")
+[[ $server_identity =~ ^[0-9a-f]{64}$ && $editor_identity == "$server_identity" \
+  && $generic_nvim_identity == "$server_identity" && $shell_identity == "$server_identity" ]] || {
+  printf '%s\n' 'all four launchers did not produce the same container-tools identity' >&2; exit 1;
 }
-[[ $(<"$server_cwd_log") == $(<"$editor_cwd_log") ]] || {
-  printf '%s\n' 'server and editor persistent profile CWD differs' >&2; exit 1;
+[[ $(<"$server_cwd_log") == $(<"$editor_cwd_log") \
+  && $(<"$editor_cwd_log") == $(<"$generic_nvim_cwd_log") \
+  && $(<"$generic_nvim_cwd_log") == $(<"$shell_cwd_log") ]] || {
+  printf '%s\n' 'persistent launchers use different profile CWDs' >&2; exit 1;
 }
-[[ $(<"$server_cwd_log") == "$home" && $(<"$editor_cwd_log") == "$home" ]] || {
+[[ $(<"$server_cwd_log") == "$home" && $(<"$editor_cwd_log") == "$home" \
+  && $(<"$generic_nvim_cwd_log") == "$home" && $(<"$shell_cwd_log") == "$home" ]] || {
   printf '%s\n' 'shared persistent profile did not use the canonical launcher CWD' >&2; exit 1;
 }
 mapfile -t editor_profile_argv < "$work/editor-persistent-profile.log"
@@ -490,6 +540,14 @@ mapfile -t editor_profile_argv < "$work/editor-persistent-profile.log"
 mapfile -t server_profile_argv < "$work/server-persistent-profile.log"
 [[ " ${server_profile_argv[*]} " == *" --mkchad-payload-cwd $server_cwd -- $package_bin/mkchad-opencode-server-image "* ]] || {
   printf '%s\n' 'server payload did not retain its caller working directory' >&2; exit 1;
+}
+mapfile -t generic_nvim_profile_argv < "$work/generic-nvim-persistent-profile.log"
+[[ " ${generic_nvim_profile_argv[*]} " == *" --mkchad-payload-cwd $generic_nvim_cwd -- --mkchad-generic-nvim set generic-nvim -- generic file with spaces "* ]] || {
+  printf '%s\n' 'generic nvim payload did not retain its caller app name and working directory' >&2; exit 1;
+}
+mapfile -t shell_profile_argv < "$work/nvim-shell-persistent-profile.log"
+[[ " ${shell_profile_argv[*]} " == *" --mkchad-payload-cwd $shell_cwd -- --mkchad-generic-shell -- "* ]] || {
+  printf '%s\n' 'nvim_shell payload did not retain its generic interactive-shell contract' >&2; exit 1;
 }
 
 custom_state="$work/state root"

@@ -38,4 +38,24 @@ export NPM_CONFIG_PREFIX="$MSK_NPM_GLOBAL_ROOT"
 export PATH="$MSK_NPM_GLOBAL_ROOT/bin:$PATH"
 [[ -z $mkchad_nvim_executable ]] || export MKCHAD_NVIM_EXECUTABLE="$mkchad_nvim_executable"
 
+# Generic launchers share the persistent MkChad profile, then replace only the
+# payload environment so their caller-specific Neovim selection is not part of
+# the instance identity.
+if [[ ${1:-} == --mkchad-generic-nvim ]]; then
+  [[ $# -ge 4 && ( $2 == set || $2 == unset ) ]] || die "invalid generic Neovim payload arguments"
+  generic_nvim_mode=$2
+  generic_nvim_appname=${3:-}
+  [[ ${4:-} == -- ]] || die "invalid generic Neovim payload delimiter"
+  shift 4
+  [[ -n $mkchad_nvim_executable ]] || die "container Neovim is unavailable"
+  if [[ $generic_nvim_mode == set ]]; then
+    exec env "NVIM_APPNAME=$generic_nvim_appname" "$mkchad_nvim_executable" "$@"
+  fi
+  exec env -u NVIM_APPNAME "$mkchad_nvim_executable" "$@"
+fi
+if [[ ${1:-} == --mkchad-generic-shell ]]; then
+  [[ $# -eq 2 && ${2:-} == -- ]] || die "invalid generic shell payload arguments"
+  exec env -u NVIM_APPNAME /bin/bash -i
+fi
+
 exec "$@"
