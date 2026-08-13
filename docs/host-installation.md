@@ -19,6 +19,20 @@ bin/install_nvim.sh --check --recovery-dir "$recovery_dir"
 bin/install_nvim.sh --recovery-dir "$recovery_dir"
 ```
 
+On an ACL-managed HPC system where the exact `$HOME` root is root-owned or
+group-writable, explicitly enable the deployment trust profile for both manual
+invocations:
+
+```bash
+MKCHAD_TRUST_GROUP_WRITABLE_ROOTS=1 bin/install_nvim.sh --check --recovery-dir "$recovery_dir"
+MKCHAD_TRUST_GROUP_WRITABLE_ROOTS=1 bin/install_nvim.sh --recovery-dir "$recovery_dir"
+```
+
+The profile applies only to `$HOME`: it permits root or current-user ownership
+and group write while still rejecting world write. Existing strict checks on
+`.local`, `.local/bin`, outputs, locks, and recovery state remain in force. Use
+it only when every group-class or ACL writer on `$HOME` is trusted.
+
 `--check` performs a read-only preflight. Apply records every replaced launcher
 in the private recovery directory. Retain that directory until
 `~/.local/bin/mkchad-opencode-server status --json` returns exactly one valid
