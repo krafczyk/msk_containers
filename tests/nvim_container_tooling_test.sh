@@ -4,7 +4,7 @@
 set -euo pipefail
 
 repo=$(git rev-parse --show-toplevel)
-revision=ba0eeb84ebabc005b3df08c4aadedc1b713bba25
+revision=404abbed85953875edd83309a4473517449cb5d3
 ppc_revision=$revision
 work=$(mktemp -d /tmp/mkchad-v1/container-tools-runtime-boundary/nvim-tooling.XXXXXX)
 trap 'rm -rf -- "$work"' EXIT

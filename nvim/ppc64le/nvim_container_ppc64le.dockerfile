@@ -24,15 +24,15 @@ RUN dnf update -y && \
 
 RUN set -eux; \
     git clone https://github.com/krafczyk/container_tools.git /tmp/container-tools; \
-    git -C /tmp/container-tools checkout --detach ba0eeb84ebabc005b3df08c4aadedc1b713bba25; \
-    test "$(git -C /tmp/container-tools rev-parse HEAD)" = ba0eeb84ebabc005b3df08c4aadedc1b713bba25; \
+    git -C /tmp/container-tools checkout --detach 404abbed85953875edd83309a4473517449cb5d3; \
+    test "$(git -C /tmp/container-tools rev-parse HEAD)" = 404abbed85953875edd83309a4473517449cb5d3; \
     cmake -S /tmp/container-tools -B /tmp/container-tools-build \
       -D CMAKE_BUILD_TYPE=Release -D CONTAINER_TOOLS_STATIC=ON \
       -D CMAKE_C_COMPILER=gcc; \
     cmake --build /tmp/container-tools-build; \
     cmake --install /tmp/container-tools-build --prefix /opt/msk/container-tools; \
-    /opt/msk/container-tools/bin/container-tools --version | grep -Fq ba0eeb84ebabc005b3df08c4aadedc1b713bba25; \
-    /opt/msk/container-tools/bin/container-tools --version --json | grep -Fq '"source_commit":"ba0eeb84ebabc005b3df08c4aadedc1b713bba25"'; \
+    /opt/msk/container-tools/bin/container-tools --version | grep -Fq 404abbed85953875edd83309a4473517449cb5d3; \
+    /opt/msk/container-tools/bin/container-tools --version --json | grep -Fq '"source_commit":"404abbed85953875edd83309a4473517449cb5d3"'; \
     /opt/msk/container-tools/bin/container-tools --version --json | grep -Fq '"mount_plan_grammar":"ct-mount-plan-v1"'; \
     ! readelf -d /opt/msk/container-tools/bin/container-tools | grep -Eq 'NEEDED|INTERP'; \
     rm -rf /tmp/container-tools /tmp/container-tools-build
