@@ -128,13 +128,71 @@ set -e
   printf '%s\n' 'unsafe parent was not rejected' >&2
   exit 1
 }
+HOME="$unsafe_home" bash "$installer" --no-directory-trust-checks >/dev/null
+MKCHAD_TRUST_GROUP_WRITABLE_ROOTS=invalid HOME="$unsafe_home" \
+  bash "$installer" --no-directory-trust-checks --check >/dev/null
+[[ -x $unsafe_home/.local/bin/nvim ]] || {
+  printf '%s\n' 'directory trust opt-out did not permit installation' >&2
+  exit 1
+}
+
+linked_home="$work/linked-home"
+mkdir "$linked_home"
+ln -s "$home/.local" "$linked_home/.local"
+set +e
+linked_output=$(HOME="$linked_home" bash "$installer" --no-directory-trust-checks --check 2>&1)
+linked_status=$?
+set -e
+[[ $linked_status -ne 0 && $linked_output == *'unsafe parent symlink'* ]] || {
+  printf '%s\n' 'directory trust opt-out accepted a parent symlink' >&2
+  exit 1
+}
+
+nondirectory_home="$work/nondirectory-home"
+mkdir "$nondirectory_home"
+touch "$nondirectory_home/.local"
+set +e
+nondirectory_output=$(HOME="$nondirectory_home" bash "$installer" --no-directory-trust-checks --check 2>&1)
+nondirectory_status=$?
+set -e
+[[ $nondirectory_status -ne 0 && $nondirectory_output == *'not a directory'* ]] || {
+  printf '%s\n' 'directory trust opt-out accepted a non-directory parent' >&2
+  exit 1
+}
+
+unsafe_recovery="$work/unsafe-recovery"
+mkdir "$unsafe_recovery"
+chmod 755 "$unsafe_recovery"
+set +e
+unsafe_recovery_output=$(HOME="$home" bash "$installer" --no-directory-trust-checks --check --recovery-dir "$unsafe_recovery" 2>&1)
+unsafe_recovery_status=$?
+set -e
+[[ $unsafe_recovery_status -ne 0 && $unsafe_recovery_output == *'mode 0700'* ]] || {
+  printf '%s\n' 'directory trust opt-out accepted an unsafe recovery mode' >&2
+  exit 1
+}
+
+ln -s /tmp "$target/nvim_shell"
+set +e
+unchecked_symlink_output=$(HOME="$home" bash "$installer" --no-directory-trust-checks --check 2>&1)
+unchecked_symlink_status=$?
+set -e
+rm "$target/nvim_shell"
+[[ $unchecked_symlink_status -ne 0 && $unchecked_symlink_output == *'symlink output'* ]] || {
+  printf '%s\n' 'directory trust opt-out disabled output safety' >&2
+  exit 1
+}
 
 managed_home="$work/managed-home"
 managed_bin="$work/managed-bin"
 mkdir -p "$managed_home/.local" "$managed_bin"
 cat >"$managed_bin/stat" <<'EOF'
 #!/usr/bin/env bash
-if [[ ${!#} == "$MKCHAD_TEST_MANAGED_HOME" ]]; then
+if [[ -n ${MKCHAD_TEST_FOREIGN_PATH:-} && ${!#} == "$MKCHAD_TEST_FOREIGN_PATH" && ${2:-} == %u ]]; then
+  printf '%s\n' 1234
+  exit 0
+fi
+if [[ ${!#} == "${MKCHAD_TEST_MANAGED_HOME:-}" ]]; then
   case ${2:-} in
     %u) printf '%s\n' "${MKCHAD_TEST_MANAGED_UID:-0}"; exit 0 ;;
     %a) printf '%s\n' "${MKCHAD_TEST_MANAGED_MODE:-770}"; exit 0 ;;
@@ -172,6 +230,33 @@ set -e
   printf '%s\n' 'managed foreign-owned root was not rejected' >&2
   exit 1
 }
+PATH="$managed_bin:$PATH" MKCHAD_TEST_MANAGED_HOME="$managed_home" MKCHAD_TEST_MANAGED_UID=1234 \
+  MKCHAD_TEST_REAL_STAT="$real_stat" HOME="$managed_home" \
+  bash "$installer" --no-directory-trust-checks --check >/dev/null
+
+foreign_output=$(PATH="$managed_bin:$PATH" MKCHAD_TEST_FOREIGN_PATH="$target/nvim_clear_data" \
+  MKCHAD_TEST_REAL_STAT="$real_stat" HOME="$home" \
+  bash "$installer" --no-directory-trust-checks --check 2>&1) && {
+  printf '%s\n' 'directory trust opt-out accepted a foreign-owned output' >&2
+  exit 1
+}
+[[ $foreign_output == *'foreign-owned output'* ]] || {
+  printf '%s\n' 'foreign output rejection was not reported' >&2
+  exit 1
+}
+
+lock="$home/.local/.install_nvim.lock"
+foreign_lock_output=$(PATH="$managed_bin:$PATH" MKCHAD_TEST_FOREIGN_PATH="$lock" \
+  MKCHAD_TEST_REAL_STAT="$real_stat" HOME="$home" \
+  bash "$installer" --no-directory-trust-checks 2>&1) && {
+  printf '%s\n' 'directory trust opt-out accepted a foreign-owned lock' >&2
+  exit 1
+}
+[[ $foreign_lock_output == *'foreign-owned installer lock'* ]] || {
+  printf '%s\n' 'foreign lock rejection was not reported' >&2
+  exit 1
+}
+
 foreign="$target/nvim_clear_data"
 if chown 1:1 "$foreign" 2>/dev/null; then
   set +e
@@ -191,7 +276,6 @@ printf '%s\n' '# concurrent fixture update' >> "$fixture/nvim/bin/nvim"
 cp -- "$target/nvim" "$work/nvim-before-concurrent"
 mkdir "$work/recovery-concurrent"
 chmod 700 "$work/recovery-concurrent"
-lock="$home/.local/.install_nvim.lock"
 (
   exec 9>>"$lock"
   flock -x 9

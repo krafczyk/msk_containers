@@ -8,17 +8,20 @@ script_dir=$(dirname "$(realpath "$0")")
 bin_dir="$script_dir/../nvim/bin"
 target_dir="$HOME/.local/bin"
 check_only=0
+directory_trust_checks=1
 recovery_dir=
 stage=
 recovery_stage=
 
 usage() {
   cat <<EOF
-Usage: $program [--check] [--recovery-dir DIR]
+Usage: $program [--check] [--no-directory-trust-checks] [--recovery-dir DIR]
 
 Install MkChad launchers. --check validates the complete installer-owned output
 set without writing. Replacing an existing
 non-compliant file requires a caller-created private recovery directory.
+--no-directory-trust-checks disables directory ownership and write-mode policy;
+directory symlink/type, output, lock, and recovery checks remain enforced.
 EOF
 }
 
@@ -37,6 +40,7 @@ check_safe_directory() {
   local path=$1 label=$2 allow_trusted_root=${3:-0} uid mode
   [[ ! -L $path ]] || die "unsafe parent symlink: $label"
   [[ -d $path ]] || die "unsafe parent is not a directory: $label"
+  (( ! directory_trust_checks )) && return
   uid=$(stat -Lc '%u' -- "$path") || die "cannot inspect parent: $label"
   mode=$(stat -Lc '%a' -- "$path") || die "cannot inspect parent mode: $label"
   if (( allow_trusted_root )) && [[ ${MKCHAD_TRUST_GROUP_WRITABLE_ROOTS:-0} == 1 ]]; then
@@ -202,6 +206,7 @@ acquire_lock() {
 while (($#)); do
   case "$1" in
     --check) check_only=1; shift ;;
+    --no-directory-trust-checks) directory_trust_checks=0; shift ;;
     --recovery-dir)
       (($# >= 2)) || die "--recovery-dir requires a path"
       recovery_dir=$2
@@ -212,10 +217,12 @@ while (($#)); do
   esac
 done
 
-case ${MKCHAD_TRUST_GROUP_WRITABLE_ROOTS:-0} in
-  0 | 1) ;;
-  *) die "MKCHAD_TRUST_GROUP_WRITABLE_ROOTS must be 0 or 1" ;;
-esac
+if (( directory_trust_checks )); then
+  case ${MKCHAD_TRUST_GROUP_WRITABLE_ROOTS:-0} in
+    0 | 1) ;;
+    *) die "MKCHAD_TRUST_GROUP_WRITABLE_ROOTS must be 0 or 1" ;;
+  esac
+fi
 
 preflight_all
 (( check_only )) && exit 0

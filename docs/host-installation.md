@@ -33,6 +33,21 @@ and group write while still rejecting world write. Existing strict checks on
 `.local`, `.local/bin`, outputs, locks, and recovery state remain in force. Use
 it only when every group-class or ACL writer on `$HOME` is trusted.
 
+If a supported filesystem presents directory ownership or write modes that
+cannot satisfy even that scoped profile, the operator may explicitly disable
+directory ownership and write-mode policy for one manual invocation:
+
+```bash
+bin/install_nvim.sh --no-directory-trust-checks --check --recovery-dir "$recovery_dir"
+bin/install_nvim.sh --no-directory-trust-checks --recovery-dir "$recovery_dir"
+```
+
+This option treats every writer able to replace entries in `$HOME`, `.local`,
+`.local/bin`, or the recovery directory as trusted for that invocation. It does
+not permit directory symlinks or non-directories, unsafe output types or owners,
+foreign-owned locks, or a recovery directory whose mode is not `0700`. Prefer
+the narrower `MKCHAD_TRUST_GROUP_WRITABLE_ROOTS=1` profile whenever it works.
+
 `--check` performs a read-only preflight. Apply records every replaced launcher
 in the private recovery directory. Retain that directory until
 `~/.local/bin/mkchad-opencode-server status --json` returns exactly one valid
