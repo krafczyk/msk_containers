@@ -14,7 +14,7 @@ nvim_select_container_backend || {
 }
 nvim_require_container_image || exit $?
 
-# The bootstrap removes the profile's MkChad app name before it starts this
-# interactive generic shell.
+# The bootstrap removes the profile's MkChad app name before it starts the
+# generic shell payload.
 mkchad_persistent_exec "$NVIM_CONTAINER_RUNTIME" "$NVIM_CONT_LOCATION" \
-  --mkchad-generic-shell --
+  --mkchad-generic-shell -- "$@"

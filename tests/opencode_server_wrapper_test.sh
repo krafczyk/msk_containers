@@ -493,7 +493,8 @@ set +e
 (
   cd "$shell_cwd"
   env -u SINGULARITY_CONTAINER -u APPTAINER_CONTAINER -u NVIM_APPNAME "${base_env[@]}" \
-    MKCHAD_TEST_LAUNCHER_CWD_LOG="$shell_cwd_log" CT_ROOT="$alternate_link" "$installed_nvim_shell"
+    MKCHAD_TEST_LAUNCHER_CWD_LOG="$shell_cwd_log" CT_ROOT="$alternate_link" \
+    "$installed_nvim_shell" -c 'printf shell-command'
 )
 shell_profile_status=$?
 set -e
@@ -546,8 +547,8 @@ mapfile -t generic_nvim_profile_argv < "$work/generic-nvim-persistent-profile.lo
   printf '%s\n' 'generic nvim payload did not retain its caller app name and working directory' >&2; exit 1;
 }
 mapfile -t shell_profile_argv < "$work/nvim-shell-persistent-profile.log"
-[[ " ${shell_profile_argv[*]} " == *" --mkchad-payload-cwd $shell_cwd -- --mkchad-generic-shell -- "* ]] || {
-  printf '%s\n' 'nvim_shell payload did not retain its generic interactive-shell contract' >&2; exit 1;
+[[ " ${shell_profile_argv[*]} " == *" --mkchad-payload-cwd $shell_cwd -- --mkchad-generic-shell -- -c printf shell-command "* ]] || {
+  printf '%s\n' 'nvim_shell payload did not retain its caller arguments and working directory' >&2; exit 1;
 }
 
 custom_state="$work/state root"

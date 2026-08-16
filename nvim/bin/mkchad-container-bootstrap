@@ -54,8 +54,10 @@ if [[ ${1:-} == --mkchad-generic-nvim ]]; then
   exec env -u NVIM_APPNAME "$mkchad_nvim_executable" "$@"
 fi
 if [[ ${1:-} == --mkchad-generic-shell ]]; then
-  [[ $# -eq 2 && ${2:-} == -- ]] || die "invalid generic shell payload arguments"
-  exec env -u NVIM_APPNAME /bin/bash -i
+  [[ $# -ge 2 && ${2:-} == -- ]] || die "invalid generic shell payload arguments"
+  shift 2
+  [[ $# -gt 0 ]] || set -- -i
+  exec env -u NVIM_APPNAME /bin/bash "$@"
 fi
 
 exec "$@"

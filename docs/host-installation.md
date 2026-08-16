@@ -89,7 +89,9 @@ working directory before execution, so relative editor paths retain their
 normal meaning when that directory is visible through the common mount plan.
 Generic `nvim` applies the caller's nonempty `NVIM_APPNAME` only inside its
 payload; when unset or empty it starts generic Neovim. `nvim_shell` similarly
-removes the profile's MkChad app name before starting interactive `/bin/bash`.
+removes the profile's MkChad app name before starting `/bin/bash`. With no
+arguments it starts an interactive shell; otherwise it forwards arguments such
+as `-c COMMAND` without changing the persistent profile identity.
 `mkchad-opencode-server status` remains a foreground diagnostic path and does
 not share or create a persistent instance. Its host evidence reports the
 selected runtime family and the identity of the exact selected executable.

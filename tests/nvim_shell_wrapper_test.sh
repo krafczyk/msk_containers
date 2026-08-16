@@ -127,6 +127,33 @@ argc=${#argv[@]}
   exit 1
 }
 
+plain_profile=("${argv[@]:0:argc-7}")
+rm -f "$runtime_log" "$launcher_log"
+set +e
+env -u CT_ROOT HOME="$home" XDG_DATA_HOME="$home/data" NVIM_CONT_LOCATION="$image" \
+  MKCHAD_TEST_RUNTIME_LOG="$runtime_log" MKCHAD_TEST_LAUNCHER_LOG="$launcher_log" \
+  SHELL=/missing/host-shell PATH="$fake:$PATH" "$bin/nvim_shell" -c 'printf shell-command'
+command_status=$?
+set -e
+mapfile -t command_argv < "$runtime_log"
+command_argc=${#command_argv[@]}
+command_profile=("${command_argv[@]:0:command_argc-9}")
+[[ $command_status -eq 23 \
+  && ${#command_profile[@]} -eq ${#plain_profile[@]} \
+  && ${command_argv[command_argc - 4]} == --mkchad-generic-shell \
+  && ${command_argv[command_argc - 3]} == -- \
+  && ${command_argv[command_argc - 2]} == -c \
+  && ${command_argv[command_argc - 1]} == 'printf shell-command' ]] || {
+  printf '%s\n' 'nvim_shell did not preserve shell arguments as payload-only data' >&2
+  exit 1
+}
+for index in "${!plain_profile[@]}"; do
+  [[ ${command_profile[index]} == "${plain_profile[index]}" ]] || {
+    printf '%s\n' 'nvim_shell arguments changed the persistent profile identity inputs' >&2
+    exit 1
+  }
+done
+
 mv "$fake/singularity" "$fake/singularity.disabled"
 set +e
 HOME="$home" XDG_DATA_HOME="$home/data" NVIM_CONT_LOCATION="$image" \
@@ -314,6 +341,19 @@ generic_shell_status=$?
 set -e
 [[ $generic_shell_status -eq 29 && $(<"$work/generic-shell-env.log") == $'-u\nNVIM_APPNAME\n/bin/bash\n-i' ]] || {
   printf '%s\n' 'generic shell payload did not start interactive /bin/bash without NVIM_APPNAME' >&2
+  exit 1
+}
+
+set +e
+MSK_NPM_GLOBAL_BASE="$npm_base" MKCHAD_TEST_NODE_PLATFORM=linux \
+  MKCHAD_TEST_NODE_ARCH=x64 MKCHAD_TEST_NODE_VERSION=24.18.0 \
+  MKCHAD_TEST_ENV_LOG="$work/generic-shell-command-env.log" PATH="$fake:$PATH" \
+  "$bin/mkchad-container-bootstrap" --mkchad-generic-shell -- -c 'printf shell-command'
+generic_shell_command_status=$?
+set -e
+[[ $generic_shell_command_status -eq 29 \
+  && $(<"$work/generic-shell-command-env.log") == $'-u\nNVIM_APPNAME\n/bin/bash\n-c\nprintf shell-command' ]] || {
+  printf '%s\n' 'generic shell payload did not preserve caller shell arguments' >&2
   exit 1
 }
 
