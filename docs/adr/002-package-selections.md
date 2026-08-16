@@ -389,17 +389,22 @@ older runtime baseline and lacks the complete upstream browser-tool surface.
 | `google-noto-color-emoji-fonts` | Fedora base version | Provides deterministic color emoji rendering. |
 | `nss-tools` | Fedora base version | Provides `certutil` for isolated NSS certificate databases used in private-CA browser tests. |
 | `@playwright/test` | npm package pinned to `1.61.1` | Provides Playwright, its test runner, assertions, browser contexts, tracing, and command-line tooling. |
+| OpenCode Playwright compatibility package | `@playwright/test` pinned to `1.59.1` | Retains the package link and browser revision required by the current OpenCode app E2E and timeline suites. |
 | `puppeteer` | npm package pinned to `25.3.0` | Provides Chrome DevTools Protocol and WebDriver BiDi automation for scripts that use the Puppeteer API. |
 | `agent-browser` | npm package pinned to `0.32.2` | Provides a command-oriented browser interface for coding-agent workflows. `AGENT_BROWSER_EXECUTABLE_PATH` selects the existing Fedora Chromium binary instead of downloading a browser into the build user's home. |
 | Playwright Chrome for Testing | Managed by Playwright `1.61.1` under `/opt/msk/playwright-browsers` | Gives Playwright its tested full-browser revision instead of assuming compatibility with Fedora Chromium. |
 | Playwright Chromium headless shell | Managed by Playwright `1.61.1` under `/opt/msk/playwright-browsers` | Supplies the browser revision used by Playwright's default headless Chromium mode. |
 | Playwright ffmpeg | Managed by Playwright `1.61.1` under `/opt/msk/playwright-browsers` | Supports Playwright video recording and related media artifacts. |
+| OpenCode Playwright Chromium family | Managed by Playwright `1.59.1` under `/opt/msk/playwright-browsers` | Supplies the full Chromium and headless-shell revisions expected by OpenCode's pinned Playwright package. |
 
 The two npm automation packages are installed under
 `/opt/msk/browser-tools/node_modules`. A root-level `/node_modules` symlink makes
 them resolvable by ordinary CommonJS and ES module imports from projects at any
 workspace path, while `/usr/bin/playwright` and `/usr/bin/puppeteer` expose their
 CLIs. The exact direct versions are saved in the generated package metadata.
+The OpenCode-compatible Playwright package remains under
+`/opt/msk/opencode-playwright` so Playwright cache validation retains its pinned
+browser revision alongside the general browser-tool revision.
 
 Playwright installs its Chromium family payload but not Playwright Firefox or
 WebKit. Puppeteer is configured with `PUPPETEER_EXECUTABLE_PATH` to use Fedora

@@ -26,6 +26,12 @@ assert_not_contains() {
   fi
 }
 
+assert_exact_line_count() {
+  local file=$1 line=$2 expected=$3 actual
+  actual=$(grep -Fxc -- "$line" "$file" || true)
+  [[ $actual == "$expected" ]] || fail "expected $expected exact lines for $line in $file, found $actual"
+}
+
 assert_no_image_wrapper_references() {
   local file
   for file in "$repo"/nvim/{x86,aarch64,ppc64le}/nvim_container_*_{build_docker,build_singularity}.sh; do
@@ -148,6 +154,28 @@ assert_definition_owned_builds() {
   [[ ${pins[0]} == "${pins[1]}" ]] || fail 'x86 and aarch64 Dockerfile pins differ'
 }
 
+assert_browser_tooling() {
+  local architecture dockerfile x86_block arm_block
+  for architecture in x86 aarch64; do
+    dockerfile="$repo/nvim/$architecture/nvim_container_${architecture}.dockerfile"
+    assert_exact_line_count "$dockerfile" "    xdg-utils ffmpeg-free chromium chromium-headless chromedriver \\" 1
+    assert_exact_line_count "$dockerfile" 'ARG PLAYWRIGHT_VERSION=1.61.1' 1
+    assert_exact_line_count "$dockerfile" 'ARG OPENCODE_PLAYWRIGHT_VERSION=1.59.1' 1
+    assert_exact_line_count "$dockerfile" 'ENV PLAYWRIGHT_BROWSERS_PATH=/opt/msk/playwright-browsers' 1
+    assert_exact_line_count "$dockerfile" "    npm install --prefix /opt/msk/opencode-playwright --save-exact \\" 1
+    assert_exact_line_count "$dockerfile" "       \"@playwright/test@\${OPENCODE_PLAYWRIGHT_VERSION}\" && \\" 1
+    assert_exact_line_count "$dockerfile" "    playwright install chromium && \\" 1
+    assert_exact_line_count "$dockerfile" \
+      "    /opt/msk/opencode-playwright/node_modules/.bin/playwright install chromium && \\" 1
+  done
+
+  x86_block=$(awk '/^ARG AGENT_BROWSER_VERSION=/{capture=1} capture{print} /agent-browser --version/{exit}' \
+    "$repo/nvim/x86/nvim_container_x86.dockerfile")
+  arm_block=$(awk '/^ARG AGENT_BROWSER_VERSION=/{capture=1} capture{print} /agent-browser --version/{exit}' \
+    "$repo/nvim/aarch64/nvim_container_aarch64.dockerfile")
+  [[ $x86_block == "$arm_block" ]] || fail 'x86 and aarch64 browser tooling blocks differ'
+}
+
 assert_documentation() {
   local adr="$repo/docs/adr/002-package-selections.md"
   local host_installation="$repo/docs/host-installation.md"
@@ -158,6 +186,8 @@ assert_documentation() {
   assert_not_contains "$adr" '## Container-Tools Package Delivery'
   assert_not_contains "$adr" resolve_container_tools.sh
   assert_not_contains "$adr" stage_container_tools_package.sh
+  assert_contains "$adr" 'OpenCode Playwright compatibility package'
+  assert_contains "$adr" '`@playwright/test` pinned to `1.59.1`'
   assert_contains "$host_installation" '## Image Construction'
   assert_contains "$host_installation" 'Image construction never selects a host `container-tools`'
 }
@@ -165,5 +195,6 @@ assert_documentation() {
 assert_no_image_wrapper_references
 assert_builder_commands
 assert_definition_owned_builds
+assert_browser_tooling
 assert_documentation
 printf '%s\n' 'nvim container tooling tests passed'

@@ -201,6 +201,7 @@ ENV PATH="/nvim/lua-language-server/bin:$PATH"
 
 ARG AGENT_BROWSER_VERSION=0.32.2
 ARG PLAYWRIGHT_VERSION=1.61.1
+ARG OPENCODE_PLAYWRIGHT_VERSION=1.59.1
 ARG PUPPETEER_VERSION=25.3.0
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/msk/playwright-browsers
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
@@ -212,10 +213,13 @@ RUN npm install -g basedpyright \
 RUN npm install --prefix /opt/msk/browser-tools --save-exact \
        "@playwright/test@${PLAYWRIGHT_VERSION}" \
        "puppeteer@${PUPPETEER_VERSION}" && \
+    npm install --prefix /opt/msk/opencode-playwright --save-exact \
+       "@playwright/test@${OPENCODE_PLAYWRIGHT_VERSION}" && \
     ln -s /opt/msk/browser-tools/node_modules /node_modules && \
     ln -s /opt/msk/browser-tools/node_modules/.bin/playwright /usr/bin/playwright && \
     ln -s /opt/msk/browser-tools/node_modules/.bin/puppeteer /usr/bin/puppeteer && \
     playwright install chromium && \
+    /opt/msk/opencode-playwright/node_modules/.bin/playwright install chromium && \
     agent-browser --version
 
 # Baseline tools make a fresh MkChad launch work before a user-managed runtime
