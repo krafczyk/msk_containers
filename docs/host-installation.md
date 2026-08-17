@@ -120,18 +120,24 @@ full-commit-pinned `container-tools` checkout with CMake and install it under
 Docker archive. Image construction never selects a host `container-tools`
 package, `CT_ROOT`, archive, or package identity file.
 
-To build the x86 SIF without first loading the intermediate image into the
-local Docker daemon, run:
+To build an x86 or aarch64 SIF without first loading the intermediate image
+into the local Docker daemon, run the direct archive exporter:
 
 ```bash
 bash nvim/x86/nvim_container_x86_build_direct_sif.sh
+bash nvim/aarch64/nvim_container_aarch64_build_direct_sif.sh
 ```
 
-This exports Buildx's Docker archive directly to
-`nvim/x86/nvim_container_x86.tar` for the existing SingularityCE/Apptainer
-conversion, bypassing both Docker `--load` and `docker save`. The archive stays
-in place after the build. `nvim/x86/nvim_container_x86_build.sh` remains
-available when a local daemon image is desired.
+Each direct builder exports its architecture's Docker archive beside the script
+for the existing SingularityCE/Apptainer conversion, bypassing both Docker
+`--load` and `docker save`; the archive stays in place after the build.
+
+The original builders retain the daemon-image workflow:
+
+```bash
+(cd nvim/x86 && bash ./nvim_container_x86_build.sh)
+(cd nvim/aarch64 && bash ./nvim_container_aarch64_build.sh)
+```
 
 ## Writable npm Cleanup
 

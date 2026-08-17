@@ -60,7 +60,7 @@ make_builder() {
 
 assert_builder_commands() {
   local bin="$work/builders" log="$work/commands" trap_root="$work/trap"
-  local architecture image docker_script direct_sif_script singularity_script expected
+  local architecture image docker_script direct_sif_script singularity_script expected platform
   mkdir -p "$bin" "$trap_root"
   make_builder "$bin" docker
   make_builder "$bin" singularity
@@ -119,16 +119,25 @@ assert_builder_commands() {
 
   make_builder "$bin" singularity
   : > "$log"
-  direct_sif_script="$repo/nvim/x86/nvim_container_x86_build_direct_sif.sh"
-  (
-    cd "$work"
-    NVIM_TOOLING_LOG=$log CT_ROOT=$trap_root PATH="$bin:$PATH" bash "$direct_sif_script"
-  )
-  assert_not_contains "$log" '<--load>'
-  assert_not_contains "$log" 'docker <save>'
-  expected="docker <buildx> <build> <--platform> <linux/x86_64> <-f> <$repo/nvim/x86/nvim_container_x86.dockerfile> <-t> <nvim_container_x86:latest> <--output> <type=docker,dest=$repo/nvim/x86/nvim_container_x86.tar> <$repo/nvim>
-singularity <build> <--force> <--fakeroot> <nvim_container_x86.sif> <nvim_container_x86.def>"
-  [[ $(<"$log") == "$expected" ]] || fail "unexpected direct SIF builder invocations: $(<"$log")"
+  for architecture in x86 aarch64; do
+    image=nvim_container_$architecture
+    if [[ $architecture == x86 ]]; then
+      platform=linux/x86_64
+    else
+      platform=linux/arm64
+    fi
+    direct_sif_script="$repo/nvim/$architecture/${image}_build_direct_sif.sh"
+    (
+      cd "$work"
+      NVIM_TOOLING_LOG=$log CT_ROOT=$trap_root PATH="$bin:$PATH" bash "$direct_sif_script"
+    )
+    assert_not_contains "$log" '<--load>'
+    assert_not_contains "$log" 'docker <save>'
+    expected="docker <buildx> <build> <--platform> <$platform> <-f> <$repo/nvim/$architecture/${image}.dockerfile> <-t> <${image}:latest> <--output> <type=docker,dest=$repo/nvim/$architecture/${image}.tar> <$repo/nvim>
+singularity <build> <--force> <--fakeroot> <${image}.sif> <${image}.def>"
+    [[ $(<"$log") == "$expected" ]] || fail "unexpected direct SIF builder invocations for $architecture: $(<"$log")"
+    : > "$log"
+  done
 }
 
 assert_definition_owned_builds() {
@@ -241,6 +250,7 @@ assert_documentation() {
   assert_contains "$host_installation" '## Image Construction'
   assert_contains "$host_installation" 'Image construction never selects a host `container-tools`'
   assert_contains "$host_installation" 'nvim/x86/nvim_container_x86_build_direct_sif.sh'
+  assert_contains "$host_installation" 'nvim/aarch64/nvim_container_aarch64_build_direct_sif.sh'
 }
 
 assert_no_image_wrapper_references
