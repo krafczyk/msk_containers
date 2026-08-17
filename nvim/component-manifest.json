@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "component_id": "nvim-image",
-  "build_id": "nvim-0.12.4-node-24.18.0-opencode-1.18.9-mkchad.3",
+  "build_id": "nvim-0.12.4-node-24.18.0-opencode-1.18.18-mkchad.6",
   "relationships": [
     {
       "id": "ships-neovim",
@@ -29,7 +29,7 @@
       "target_component": "opencode",
       "contract": {
         "kind": "exact",
-        "version": "1.18.9-mkchad.3",
+        "version": "1.18.18-mkchad.6",
         "suffix_policy": "literal"
       }
     }
