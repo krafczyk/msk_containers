@@ -60,7 +60,7 @@ make_builder() {
 
 assert_builder_commands() {
   local bin="$work/builders" log="$work/commands" trap_root="$work/trap"
-  local architecture image docker_script singularity_script expected
+  local architecture image docker_script direct_sif_script singularity_script expected
   mkdir -p "$bin" "$trap_root"
   make_builder "$bin" docker
   make_builder "$bin" singularity
@@ -116,6 +116,19 @@ assert_builder_commands() {
     fail 'Singularity script accepted a missing native builder'
   fi
   assert_contains "$work/missing.out" 'Neither Singularity nor Apptainer are installed'
+
+  make_builder "$bin" singularity
+  : > "$log"
+  direct_sif_script="$repo/nvim/x86/nvim_container_x86_build_direct_sif.sh"
+  (
+    cd "$work"
+    NVIM_TOOLING_LOG=$log CT_ROOT=$trap_root PATH="$bin:$PATH" bash "$direct_sif_script"
+  )
+  assert_not_contains "$log" '<--load>'
+  assert_not_contains "$log" 'docker <save>'
+  expected="docker <buildx> <build> <--platform> <linux/x86_64> <-f> <$repo/nvim/x86/nvim_container_x86.dockerfile> <-t> <nvim_container_x86:latest> <--output> <type=docker,dest=$repo/nvim/x86/nvim_container_x86.tar> <$repo/nvim>
+singularity <build> <--force> <--fakeroot> <nvim_container_x86.sif> <nvim_container_x86.def>"
+  [[ $(<"$log") == "$expected" ]] || fail "unexpected direct SIF builder invocations: $(<"$log")"
 }
 
 assert_definition_owned_builds() {
@@ -227,6 +240,7 @@ assert_documentation() {
   assert_contains "$adr" '`@playwright/test` pinned to `1.59.1`'
   assert_contains "$host_installation" '## Image Construction'
   assert_contains "$host_installation" 'Image construction never selects a host `container-tools`'
+  assert_contains "$host_installation" 'nvim/x86/nvim_container_x86_build_direct_sif.sh'
 }
 
 assert_no_image_wrapper_references
