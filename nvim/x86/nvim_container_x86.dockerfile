@@ -33,23 +33,14 @@ RUN dnf update -y && \
     uv --version && \
     dnf clean all
 
-RUN set -eux; \
-    git clone https://github.com/krafczyk/container_tools.git /tmp/container-tools; \
-    git -C /tmp/container-tools checkout --detach 404abbed85953875edd83309a4473517449cb5d3; \
-    test "$(git -C /tmp/container-tools rev-parse HEAD)" = 404abbed85953875edd83309a4473517449cb5d3; \
-    cmake -S /tmp/container-tools -B /tmp/container-tools-build \
-      -D CMAKE_BUILD_TYPE=Release -D CONTAINER_TOOLS_STATIC=ON \
-      -D CMAKE_C_COMPILER=musl-gcc; \
-    cmake --build /tmp/container-tools-build; \
-    cmake --install /tmp/container-tools-build --prefix /opt/msk/container-tools; \
-    /opt/msk/container-tools/bin/container-tools --version | grep -Fq 404abbed85953875edd83309a4473517449cb5d3; \
-    /opt/msk/container-tools/bin/container-tools --version --json | grep -Fq '"source_commit":"404abbed85953875edd83309a4473517449cb5d3"'; \
-    /opt/msk/container-tools/bin/container-tools --version --json | grep -Fq '"mount_plan_grammar":"ct-mount-plan-v1"'; \
-    rm -rf /tmp/container-tools /tmp/container-tools-build
+# Declare this before later tool paths to preserve their runtime precedence.
 ENV PATH="/opt/msk/container-tools/bin:$PATH"
 
 # Generate the locales
 RUN localedef -i en_US -f UTF-8 en_US.UTF-8
+
+# A read-only image needs stable build and runtime-owned npm directories.
+RUN mkdir -p /nvim /opt/msk/npm-global
 
 ARG PROOT_VERSION=v5.4.0
 ARG PROOT_REVISION=bd5a5f63d72f8210d8cee76195eb9f0749e5bd70
@@ -84,80 +75,6 @@ RUN set -eux; \
     ! grep -Fq ' INTERP ' "${smoke_dir}/program-headers"; \
     "${smoke_dir}/hello"; \
     rm -rf "${smoke_dir}"
-
-ARG STYLUA_VERSION=2.5.2
-ARG AST_GREP_VERSION=0.44.1
-ARG LUACHECK_VERSION=1.2.0-1
-RUN cargo install --locked --root /usr --version "${STYLUA_VERSION}" \
-      --features luajit stylua && \
-    cargo install --locked --root /opt/msk/ast-grep --version "${AST_GREP_VERSION}" \
-      ast-grep && \
-    ln -s /opt/msk/ast-grep/bin/ast-grep /usr/bin/ast-grep && \
-    luarocks install luacheck "${LUACHECK_VERSION}"
-
-# Install needed python packages
-RUN pip3 install --prefix /usr \
-    "git+https://github.com/pydantic/pydantic@main#egg=pydantic" \
-    openai jedi pynvim python-lsp-server[all] "jsonschema>=4.23,<5" \
-    selenium==4.46.0 \
-    py-spy && \
-    python3 -c 'from jsonschema import Draft202012Validator' && \
-    ast-grep --version && \
-    ffmpeg -version && \
-    shellcheck --version
-
-ENV NODE_VER=24.18.0
-
-# A read-only image still needs a stable target for the runtime-owned npm
-# prefix bind mount.
-RUN mkdir -p /opt/msk/npm-global
-
-# Install Node.js and npm
-RUN mkdir -p /nvim && \
-    curl -sL "https://nodejs.org/dist/v${NODE_VER}/node-v${NODE_VER}-linux-x64.tar.gz" | tar -xzC /nvim
-
-ENV PATH="/nvim/node-v${NODE_VER}-linux-x64/bin:$PATH"
-
-RUN npm install -g neovim
-
-# Bun supports source authoring and testing; OpenCode uses its verified release.
-ARG BUN_VERSION=1.3.14
-ARG BUN_RELEASE_BASE=https://github.com/oven-sh/bun/releases/download/bun-v1.3.14
-ARG BUN_ASSET=bun-linux-x64.zip
-ARG BUN_SHA256=951ee2aee855f08595aeec6225226a298d3fea83a3dcd6465c09cbccdf7e848f
-RUN set -eux; \
-    bun_archive="/tmp/${BUN_ASSET}"; \
-    bun_extract="/tmp/bun"; \
-    curl --fail --show-error --location --retry 3 --retry-all-errors --connect-timeout 20 --max-time 1800 --retry-max-time 1800 --proto '=https' --tlsv1.2 --output "${bun_archive}" \
-      "${BUN_RELEASE_BASE}/${BUN_ASSET}"; \
-    echo "${BUN_SHA256}  ${bun_archive}" | sha256sum --check --strict -; \
-    unzip -q "${bun_archive}" -d "${bun_extract}"; \
-    install -D -m 0755 "${bun_extract}/${BUN_ASSET%.zip}/bun" /opt/msk/bun/bin/bun; \
-    ln -s /opt/msk/bun/bin/bun /usr/bin/bun; \
-    ln -s /opt/msk/bun/bin/bun /usr/bin/bunx; \
-    rm -rf "${bun_archive}" "${bun_extract}"; \
-    test "$(bun --version)" = "${BUN_VERSION}"; \
-    test "$(bunx --version)" = "${BUN_VERSION}"
-
-ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk
-
-# Install Eclipse JDTLS
-ENV JDTLS_MILESTONE=1.56.0
-RUN set -eux;  cd /nvim; \
-    base="https://download.eclipse.org/jdtls/milestones/${JDTLS_MILESTONE}"; \
-    file="$(curl -fsSL ${base}/latest.txt | tr -d '\n')"; \
-    curl -fsSLO "${base}/${file}"; \
-    sum="$(curl -fsSL "${base}/${file}.sha256" \
-        | tr -d '\r' \
-        | grep -Eo '[0-9a-fA-F]{64}' \
-        | head -n1)"; \
-    test -n "${sum}"; \
-    echo "${sum}  ${file}" | sha256sum -c -; \
-    mkdir -p /nvim/jdtls; \
-    tar --no-same-owner --no-same-permissions -xzf "${file}" -C /nvim/jdtls; \
-    test -x /nvim/jdtls/bin/jdtls
-
-ENV PATH=/nvim/jdtls/bin:$PATH
 
 # Build/install LuaJit
 RUN cd /nvim && \
@@ -197,6 +114,56 @@ RUN git clone --depth 1 --branch 3.17.1 https://github.com/LuaLS/lua-language-se
     cd /nvim/lua-language-server && \
     bash ./make.sh
 
+ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk
+
+# Install Eclipse JDTLS
+ENV JDTLS_MILESTONE=1.56.0
+RUN set -eux;  cd /nvim; \
+    base="https://download.eclipse.org/jdtls/milestones/${JDTLS_MILESTONE}"; \
+    file="$(curl -fsSL ${base}/latest.txt | tr -d '\n')"; \
+    curl -fsSLO "${base}/${file}"; \
+    sum="$(curl -fsSL "${base}/${file}.sha256" \
+        | tr -d '\r' \
+        | grep -Eo '[0-9a-fA-F]{64}' \
+        | head -n1)"; \
+    test -n "${sum}"; \
+    echo "${sum}  ${file}" | sha256sum -c -; \
+    mkdir -p /nvim/jdtls; \
+    tar --no-same-owner --no-same-permissions -xzf "${file}" -C /nvim/jdtls; \
+    test -x /nvim/jdtls/bin/jdtls
+
+ARG STYLUA_VERSION=2.5.2
+ARG AST_GREP_VERSION=0.44.1
+ARG LUACHECK_VERSION=1.2.0-1
+RUN cargo install --locked --root /usr --version "${STYLUA_VERSION}" \
+      --features luajit stylua && \
+    cargo install --locked --root /opt/msk/ast-grep --version "${AST_GREP_VERSION}" \
+      ast-grep && \
+    ln -s /opt/msk/ast-grep/bin/ast-grep /usr/bin/ast-grep && \
+    luarocks install luacheck "${LUACHECK_VERSION}"
+
+# Install needed python packages
+RUN pip3 install --prefix /usr \
+    "git+https://github.com/pydantic/pydantic@main#egg=pydantic" \
+    openai jedi pynvim python-lsp-server[all] "jsonschema>=4.23,<5" \
+    selenium==4.46.0 \
+    py-spy && \
+    python3 -c 'from jsonschema import Draft202012Validator' && \
+    ast-grep --version && \
+    ffmpeg -version && \
+    shellcheck --version
+
+ENV NODE_VER=24.18.0
+
+# Install Node.js and npm
+RUN curl -sL "https://nodejs.org/dist/v${NODE_VER}/node-v${NODE_VER}-linux-x64.tar.gz" | tar -xzC /nvim
+
+ENV PATH="/nvim/node-v${NODE_VER}-linux-x64/bin:$PATH"
+
+RUN npm install -g neovim
+
+ENV PATH=/nvim/jdtls/bin:$PATH
+
 ENV PATH="/nvim/lua-language-server/bin:$PATH"
 
 ARG AGENT_BROWSER_VERSION=0.32.2
@@ -221,6 +188,40 @@ RUN npm install --prefix /opt/msk/browser-tools --save-exact \
     playwright install chromium && \
     /opt/msk/opencode-playwright/node_modules/.bin/playwright install chromium && \
     agent-browser --version
+
+# Bun supports source authoring and testing; OpenCode uses its verified release.
+ARG BUN_VERSION=1.3.14
+ARG BUN_RELEASE_BASE=https://github.com/oven-sh/bun/releases/download/bun-v1.3.14
+ARG BUN_ASSET=bun-linux-x64.zip
+ARG BUN_SHA256=951ee2aee855f08595aeec6225226a298d3fea83a3dcd6465c09cbccdf7e848f
+RUN set -eux; \
+    bun_archive="/tmp/${BUN_ASSET}"; \
+    bun_extract="/tmp/bun"; \
+    curl --fail --show-error --location --retry 3 --retry-all-errors --connect-timeout 20 --max-time 1800 --retry-max-time 1800 --proto '=https' --tlsv1.2 --output "${bun_archive}" \
+      "${BUN_RELEASE_BASE}/${BUN_ASSET}"; \
+    echo "${BUN_SHA256}  ${bun_archive}" | sha256sum --check --strict -; \
+    unzip -q "${bun_archive}" -d "${bun_extract}"; \
+    install -D -m 0755 "${bun_extract}/${BUN_ASSET%.zip}/bun" /opt/msk/bun/bin/bun; \
+    ln -s /opt/msk/bun/bin/bun /usr/bin/bun; \
+    ln -s /opt/msk/bun/bin/bun /usr/bin/bunx; \
+    rm -rf "${bun_archive}" "${bun_extract}"; \
+    test "$(bun --version)" = "${BUN_VERSION}"; \
+    test "$(bunx --version)" = "${BUN_VERSION}"
+
+# Build/install container-tools
+RUN set -eux; \
+    git clone https://github.com/krafczyk/container_tools.git /tmp/container-tools; \
+    git -C /tmp/container-tools checkout --detach 404abbed85953875edd83309a4473517449cb5d3; \
+    test "$(git -C /tmp/container-tools rev-parse HEAD)" = 404abbed85953875edd83309a4473517449cb5d3; \
+    cmake -S /tmp/container-tools -B /tmp/container-tools-build \
+      -D CMAKE_BUILD_TYPE=Release -D CONTAINER_TOOLS_STATIC=ON \
+      -D CMAKE_C_COMPILER=musl-gcc; \
+    cmake --build /tmp/container-tools-build; \
+    cmake --install /tmp/container-tools-build --prefix /opt/msk/container-tools; \
+    /opt/msk/container-tools/bin/container-tools --version | grep -Fq 404abbed85953875edd83309a4473517449cb5d3; \
+    /opt/msk/container-tools/bin/container-tools --version --json | grep -Fq '"source_commit":"404abbed85953875edd83309a4473517449cb5d3"'; \
+    /opt/msk/container-tools/bin/container-tools --version --json | grep -Fq '"mount_plan_grammar":"ct-mount-plan-v1"'; \
+    rm -rf /tmp/container-tools /tmp/container-tools-build
 
 # Baseline tools make a fresh MkChad launch work before a user-managed runtime
 # update has been installed.  The latter takes precedence when mounted.

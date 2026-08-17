@@ -176,6 +176,43 @@ assert_browser_tooling() {
   [[ $x86_block == "$arm_block" ]] || fail 'x86 and aarch64 browser tooling blocks differ'
 }
 
+line_number() {
+  local file=$1 marker=$2 line
+  line=$(grep -n -m 1 -F -- "$marker" "$file") || fail "missing $marker in $file"
+  printf '%s\n' "${line%%:*}"
+}
+
+assert_cache_order() {
+  local architecture dockerfile dnf container_path nvim_root luajit neovim luals cargo python node bun jdtls jdtls_path luals_path browser container_tools opencode manifest
+  for architecture in x86 aarch64; do
+    dockerfile="$repo/nvim/$architecture/nvim_container_${architecture}.dockerfile"
+    dnf=$(line_number "$dockerfile" 'RUN dnf update -y')
+    container_path=$(line_number "$dockerfile" 'ENV PATH="/opt/msk/container-tools/bin:$PATH"')
+    nvim_root=$(line_number "$dockerfile" 'RUN mkdir -p /nvim /opt/msk/npm-global')
+    luajit=$(line_number "$dockerfile" '# Build/install LuaJit')
+    neovim=$(line_number "$dockerfile" '# Clone neovim')
+    luals=$(line_number "$dockerfile" '# Install lua language server')
+    cargo=$(line_number "$dockerfile" 'ARG STYLUA_VERSION=')
+    python=$(line_number "$dockerfile" '# Install needed python packages')
+    node=$(line_number "$dockerfile" 'ENV NODE_VER=')
+    bun=$(line_number "$dockerfile" '# Bun supports source authoring and testing; OpenCode uses its verified release.')
+    jdtls=$(line_number "$dockerfile" '# Install Eclipse JDTLS')
+    jdtls_path=$(line_number "$dockerfile" 'ENV PATH=/nvim/jdtls/bin:$PATH')
+    luals_path=$(line_number "$dockerfile" 'ENV PATH="/nvim/lua-language-server/bin:$PATH"')
+    browser=$(line_number "$dockerfile" 'ARG AGENT_BROWSER_VERSION=0.32.2')
+    container_tools=$(line_number "$dockerfile" '# Build/install container-tools')
+    opencode=$(line_number "$dockerfile" 'ARG OPENCODE_VERSION=')
+    manifest=$(line_number "$dockerfile" 'COPY component-manifest.json /usr/share/mkchad/component-manifest.json')
+    (( dnf < container_path && container_path < nvim_root && nvim_root < luajit &&
+       luajit < neovim && neovim < luals &&
+       luals < jdtls && jdtls < cargo && cargo < python && python < node &&
+       node < jdtls_path && jdtls_path < luals_path && luals_path < browser && browser < bun &&
+       bun < container_tools &&
+       container_tools < opencode && opencode < manifest )) ||
+      fail "unexpected Docker layer cache order for $architecture"
+  done
+}
+
 assert_documentation() {
   local adr="$repo/docs/adr/002-package-selections.md"
   local host_installation="$repo/docs/host-installation.md"
@@ -196,5 +233,6 @@ assert_no_image_wrapper_references
 assert_builder_commands
 assert_definition_owned_builds
 assert_browser_tooling
+assert_cache_order
 assert_documentation
 printf '%s\n' 'nvim container tooling tests passed'
