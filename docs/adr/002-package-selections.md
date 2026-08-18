@@ -122,7 +122,7 @@ Every maintained Dockerfile owns the `container-tools` source selection. It
 clones `https://github.com/krafczyk/container_tools.git`, checks out a reviewed
 full commit, verifies detached `HEAD`, then configures, builds, and installs the
 static executable with CMake under `/opt/msk/container-tools`. All maintained
-architectures select `aeaff4fb01d1468254f2d31e9dce85240a3921c6`;
+architectures select `eae504da664a6f683306f7830e106626077c2e68`;
 x86_64 and aarch64 use `musl-gcc`, while PPC64LE uses GCC and `glibc-static`.
 Each Dockerfile verifies the compiled human and JSON version identity,
 including its source commit and `ct-mount-plan-v1` grammar, before removing its
