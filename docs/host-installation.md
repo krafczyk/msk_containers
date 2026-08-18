@@ -130,7 +130,10 @@ bash nvim/aarch64/nvim_container_aarch64_build_direct_sif.sh
 
 Each direct builder exports its architecture's Docker archive beside the script
 for the existing SingularityCE/Apptainer conversion, bypassing both Docker
-`--load` and `docker save`; the archive stays in place after the build.
+`--load` and `docker save`; the archive stays in place after the build. The
+produced SIF is named from the full source-checkout HEAD commit:
+`nvim_container_x86_g<FULL_SHA>.sif` or
+`nvim_container_aarch64_g<FULL_SHA>.sif`.
 
 The original builders retain the daemon-image workflow:
 

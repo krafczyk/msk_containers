@@ -6,6 +6,7 @@ set -euo pipefail
 repo=$(git rev-parse --show-toplevel)
 revision=404abbed85953875edd83309a4473517449cb5d3
 ppc_revision=$revision
+head_revision=$(git -C "$repo" rev-parse HEAD)
 work=$(mktemp -d /tmp/mkchad-v1/container-tools-runtime-boundary/nvim-tooling.XXXXXX)
 trap 'rm -rf -- "$work"' EXIT
 
@@ -59,7 +60,7 @@ make_builder() {
 }
 
 assert_builder_commands() {
-  local bin="$work/builders" log="$work/commands" trap_root="$work/trap"
+  local bin="$work/builders" log="$work/commands" trap_root="$work/trap" ambient_git="$work/ambient-git"
   local architecture image docker_script direct_sif_script singularity_script expected platform
   mkdir -p "$bin" "$trap_root"
   make_builder "$bin" docker
@@ -68,6 +69,8 @@ assert_builder_commands() {
   printf '%s\n' '#!/usr/bin/env bash' 'exit 97' > "$bin/container-tools"
   printf '%s\n' '#!/usr/bin/env bash' 'exit 98' > "$trap_root/container-tools"
   chmod +x "$bin/container-tools" "$trap_root/container-tools"
+  git init -q "$ambient_git"
+  git -C "$ambient_git" -c user.name=test -c user.email=test@example.invalid commit --allow-empty -qm ambient
 
   for architecture in x86 aarch64 ppc64le; do
     image=nvim_container_$architecture
@@ -129,12 +132,15 @@ assert_builder_commands() {
     direct_sif_script="$repo/nvim/$architecture/${image}_build_direct_sif.sh"
     (
       cd "$work"
-      NVIM_TOOLING_LOG=$log CT_ROOT=$trap_root PATH="$bin:$PATH" bash "$direct_sif_script"
+      GIT_DIR="$ambient_git/.git" GIT_WORK_TREE="$ambient_git" GIT_COMMON_DIR="$ambient_git/.git" \
+        GIT_OBJECT_DIRECTORY="$ambient_git/.git/objects" GIT_ALTERNATE_OBJECT_DIRECTORIES="$ambient_git/.git/objects" \
+        GIT_INDEX_FILE="$ambient_git/.git/index" GIT_NAMESPACE=ambient \
+        NVIM_TOOLING_LOG=$log CT_ROOT=$trap_root PATH="$bin:$PATH" bash "$direct_sif_script"
     )
     assert_not_contains "$log" '<--load>'
     assert_not_contains "$log" 'docker <save>'
     expected="docker <buildx> <build> <--platform> <$platform> <-f> <$repo/nvim/$architecture/${image}.dockerfile> <-t> <${image}:latest> <--output> <type=docker,dest=$repo/nvim/$architecture/${image}.tar> <$repo/nvim>
-singularity <build> <--force> <--fakeroot> <${image}.sif> <${image}.def>"
+singularity <build> <--force> <--fakeroot> <$repo/nvim/$architecture/${image}_g${head_revision}.sif> <${image}.def>"
     [[ $(<"$log") == "$expected" ]] || fail "unexpected direct SIF builder invocations for $architecture: $(<"$log")"
     : > "$log"
   done
@@ -251,6 +257,8 @@ assert_documentation() {
   assert_contains "$host_installation" 'Image construction never selects a host `container-tools`'
   assert_contains "$host_installation" 'nvim/x86/nvim_container_x86_build_direct_sif.sh'
   assert_contains "$host_installation" 'nvim/aarch64/nvim_container_aarch64_build_direct_sif.sh'
+  assert_contains "$host_installation" 'nvim_container_x86_g<FULL_SHA>.sif'
+  assert_contains "$host_installation" 'nvim_container_aarch64_g<FULL_SHA>.sif'
 }
 
 assert_no_image_wrapper_references

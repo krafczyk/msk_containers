@@ -15,4 +15,5 @@ else
     exit 1
 fi
 
-${SINGULARITY} build --force --fakeroot nvim_container_x86.sif nvim_container_x86.def
+output_sif=${1:-nvim_container_x86.sif}
+${SINGULARITY} build --force --fakeroot "$output_sif" nvim_container_x86.def
