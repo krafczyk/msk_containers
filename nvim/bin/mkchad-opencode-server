@@ -20,6 +20,12 @@ data_home=${XDG_DATA_HOME:-"$HOME/.local/share"}
 mkchad_data_dir="$data_home/mkchad"
 npm_base="$HOME/.local/share/msk_containers/npm-global"
 npm_container_base=/opt/msk/npm-global
+lifecycle_command=
+for lifecycle_argument in "$@"; do
+  [[ $lifecycle_argument == -- ]] && continue
+  lifecycle_command=$lifecycle_argument
+  break
+done
 
 die() {
   printf '%s: %s\n' "$program" "$*" >&2
@@ -32,8 +38,11 @@ die() {
 container_signal=${SINGULARITY_CONTAINER:-${APPTAINER_CONTAINER:-}}
 if [[ -n $container_signal && ( ${MKCHAD_NVIM_IMAGE:-} == 1 || ${container_signal##*/} == neovim.sif ) ]]; then
   # Compatibility for MkChad revisions that still call the public launcher.
-  if [[ ${1:-} == start && ${MKCHAD_PERSISTENT_INSTANCE:-} != 1 ]]; then
+  if [[ $lifecycle_command == start && ${MKCHAD_PERSISTENT_INSTANCE:-} != 1 ]]; then
     die "detached start requires the managed persistent container instance"
+  fi
+  if [[ $lifecycle_command == restart-broker && ${MKCHAD_PERSISTENT_INSTANCE:-} != 1 ]]; then
+    die "broker restart requires the managed persistent container instance"
   fi
   exec "$image_command" "$@"
 fi
@@ -47,7 +56,7 @@ container_dir=${NVIM_CONTAINER_DIR:-"$HOME/containers"}
 image=${NVIM_CONT_LOCATION:-"$container_dir/neovim.sif"}
 [[ -f $image ]] || die "active Neovim image is missing: $image"
 
-if [[ ${1:-} == status ]]; then
+if [[ $lifecycle_command == status ]]; then
   foreground_launcher=$(ct_launcher_path ct_exec.sh)
   evidence_collector="$script_dir/mkchad-status-host-evidence"
   runtime_command_dir=${runtime_executable%/*}

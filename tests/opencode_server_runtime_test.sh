@@ -179,6 +179,26 @@ expect_json "$work/start-2.json" start healthy
   && $(stat -c '%d:%i' -- "$control_file") == "$control_inode" ]] || {
   printf '%s\n' 'separate host invocations did not reuse the generation and control inode' >&2; exit 1;
 }
+run_command restart-broker --json > "$work/restart-broker.json"
+expect_json "$work/restart-broker.json" restart-broker healthy
+replacement_generation=$(json_field "$work/restart-broker.json" state.generation)
+replacement_backend_pid=$(json_field "$state_file" backend.pid)
+replacement_broker_pid=$(json_field "$state_file" proxy.pid)
+replacement_control_inode=$(stat -c '%d:%i' -- "$control_file")
+[[ $replacement_generation != "$generation" \
+  && $(json_field "$state_file" generation) == "$replacement_generation" \
+  && $replacement_backend_pid == "$backend_pid" \
+  && $replacement_broker_pid != "$broker_pid" \
+  && $(json_field "$state_file" broker.control_ino) == "${replacement_control_inode#*:}" ]] || {
+  printf '%s\n' 'broker restart did not preserve only the backend process' >&2; exit 1;
+}
+if "$runtime" exec "instance://$instance_name" /bin/kill -0 "$broker_pid" 2>/dev/null; then
+  printf '%s\n' 'broker restart retained the previous broker process' >&2
+  exit 1
+fi
+generation=$replacement_generation
+broker_pid=$replacement_broker_pid
+control_inode=$replacement_control_inode
 [[ ! -r /proc/$backend_pid/fd && ! -r /proc/$broker_pid/fd ]] || {
   printf '%s\n' 'protected procfs denial was not reproduced from the fresh host context' >&2; exit 1;
 }
@@ -189,7 +209,7 @@ expect_json "$work/start-2.json" start healthy
   printf 'backend_pid=%s\n' "$backend_pid"
   printf 'instance_name=%s\n' "$instance_name"
   printf 'instance_persisted_after_manager=yes\n'
-  printf 'generation_reused=yes\ncontrol_inode_stable=yes\nprocfs_denied=yes\n'
+  printf 'generation_reused=yes\ncontrol_inode_stable=yes\nbroker_restart_preserved_backend=yes\nprocfs_denied=yes\n'
 } >> "$work/evidence/runtime.txt"
 
 # The Java test hook pauses exactly at broker-context pidfd dispatch. At that
@@ -202,8 +222,8 @@ for _ in $(seq 1 150); do
   sleep 0.1
 done
 [[ -e $hook_dir/pidfd-signal.reached ]] || { printf '%s\n' 'broker-context pidfd hook was not reached' >&2; exit 1; }
-url=$(json_field "$work/start-1.json" state.url)
-ca_cert=$(json_field "$work/start-1.json" state.ca_cert)
+url=$(json_field "$work/restart-broker.json" state.url)
+ca_cert=$(json_field "$work/restart-broker.json" state.ca_cert)
 if curl --fail --silent --show-error --max-time 2 --cacert "$ca_cert" "$url/global/health" >/dev/null 2>&1; then
   printf '%s\n' 'public admission remained reachable at broker pidfd dispatch' >&2
   exit 1

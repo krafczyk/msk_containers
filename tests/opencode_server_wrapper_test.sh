@@ -726,6 +726,39 @@ set -e
 }
 
 set +e
+env -u MKCHAD_PERSISTENT_INSTANCE "${base_env[@]}" SINGULARITY_CONTAINER="$image" MKCHAD_NVIM_IMAGE=1 \
+  "$installed_wrapper" restart-broker --json >"$work/foreground-restart.out" 2>"$work/foreground-restart.err"
+foreground_restart_status=$?
+set -e
+[[ $foreground_restart_status -eq 1 \
+  && $(<"$work/foreground-restart.err") == *'broker restart requires the managed persistent container instance'* \
+  && ! -e $nvim_log ]] || {
+  printf '%s\n' 'foreground container broker restart did not fail before lifecycle execution' >&2; exit 1;
+}
+
+set +e
+env -u MKCHAD_PERSISTENT_INSTANCE "${base_env[@]}" SINGULARITY_CONTAINER="$image" MKCHAD_NVIM_IMAGE=1 \
+  "$installed_image_command" restart-broker --json >"$work/direct-foreground-restart.out" 2>"$work/direct-foreground-restart.err"
+direct_foreground_restart_status=$?
+set -e
+[[ $direct_foreground_restart_status -eq 1 \
+  && $(<"$work/direct-foreground-restart.err") == *'broker restart requires the managed persistent container instance'* \
+  && ! -e $nvim_log ]] || {
+  printf '%s\n' 'in-image companion allowed broker restart without mount authority' >&2; exit 1;
+}
+
+set +e
+env -u MKCHAD_PERSISTENT_INSTANCE "${base_env[@]}" SINGULARITY_CONTAINER="$image" MKCHAD_NVIM_IMAGE=1 \
+  "$installed_wrapper" -- restart-broker --json >"$work/separated-restart.out" 2>"$work/separated-restart.err"
+separated_restart_status=$?
+set -e
+[[ $separated_restart_status -eq 1 \
+  && $(<"$work/separated-restart.err") == *'broker restart requires the managed persistent container instance'* \
+  && ! -e $nvim_log ]] || {
+  printf '%s\n' 'argument separator bypassed the broker restart guard' >&2; exit 1;
+}
+
+set +e
 env "${base_env[@]}" SINGULARITY_CONTAINER="$image" MKCHAD_NVIM_IMAGE=1 MKCHAD_PERSISTENT_INSTANCE=1 \
   "$installed_image_command" start --json
 managed_start_status=$?
