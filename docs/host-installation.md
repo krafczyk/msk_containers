@@ -96,6 +96,46 @@ as `-c COMMAND` without changing the persistent profile identity.
 not share or create a persistent instance. Its host evidence reports the
 selected runtime family and the identity of the exact selected executable.
 
+### NVIDIA GPUs
+
+Host `mkchad`, `nvim`, `nvim_shell`, and `mkchad-opencode-server` launches default
+to `MKCHAD_GPU=nvidia`. The shared profile passes `--ct-gpu nvidia` to
+container-tools, which places the native `--nv` option after `instance start`
+and `exec`. Foreground server `status` uses the same selection. Set
+`MKCHAD_GPU=none` for an explicit CPU-only launch:
+
+```bash
+MKCHAD_GPU=none mkchad
+MKCHAD_GPU=none nvim_shell
+MKCHAD_GPU=none mkchad-opencode-server status --json
+```
+
+For a CPU-only host, add `export MKCHAD_GPU=none` to your shell configuration.
+Only `none` and `nvidia` are valid; an empty or unknown value fails before
+container dispatch. Generic container-tools commands still default to `none`.
+Do not use `CT_SINGULARITY_ARGS=--nv`: that escape hatch precedes the runtime
+subcommand and does not select the managed GPU profile.
+
+NVIDIA and CPU profiles have different identities, so a GPU launch cannot
+reuse an existing CPU-only instance. Switching modes leaves the other instance
+running. Keep the same mode for editors and their managed server; switching a
+running service requires stopping it with its original mode before starting it
+with the new mode. This option changes new launches, not an already-running
+container or server.
+
+Install the matching host container-tools revision before the updated launchers;
+older helpers reject `--ct-gpu`. Rebuild images from the updated Dockerfile pins
+to include the same helper support inside the image. NVIDIA device visibility
+and host driver-library binding are provided by SingularityCE/Apptainer;
+runtime errors propagate without CPU fallback. CPU-only hosts may warn about
+missing NVIDIA devices/libraries unless opted out. This option neither allocates
+a GPU nor installs a CUDA toolkit; follow scheduler allocations on cluster
+hosts. After deployment, validate on an allocated NVIDIA host, for example:
+
+```bash
+nvim_shell -c 'nvidia-smi'
+```
+
 ## Release Deployer Handoff
 
 The schema-2 deployer calls the pinned `msk_containers` checkout with a fresh,

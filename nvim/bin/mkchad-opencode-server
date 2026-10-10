@@ -57,6 +57,7 @@ image=${NVIM_CONT_LOCATION:-"$container_dir/neovim.sif"}
 [[ -f $image ]] || die "active Neovim image is missing: $image"
 
 if [[ $lifecycle_command == status ]]; then
+  gpu_mode=$(mkchad_gpu_mode)
   foreground_launcher=$(ct_launcher_path ct_exec.sh)
   evidence_collector="$script_dir/mkchad-status-host-evidence"
   runtime_command_dir=${runtime_executable%/*}
@@ -103,6 +104,7 @@ if [[ $lifecycle_command == status ]]; then
     --ct-env "XDG_CACHE_HOME=$cache_dir" \
     --ct-env "XDG_DATA_HOME=$data_home" \
     --ct-env "MSK_NPM_GLOBAL_BASE=$npm_container_base" \
+    --ct-gpu "$gpu_mode" \
     --ct-bootstrap "$script_dir/mkchad-container-bootstrap" \
     -- "$image" /usr/bin/env HOME=/nonexistent \
     "$image_command" "$@" --host-evidence-v1 "$host_evidence"

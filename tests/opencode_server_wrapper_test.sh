@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+unset MKCHAD_GPU
 
 work=${1:?pass a task-specific directory beneath /tmp/mkchad-v1}
 wrapper=${2:?pass the wrapper path}
@@ -181,14 +182,15 @@ mapfile -t runtime_argv < "$status_log"
   && ${runtime_argv[11]} == --ct-env && ${runtime_argv[12]} == "XDG_CACHE_HOME=$home/.local/cache" \
   && ${runtime_argv[13]} == --ct-env && ${runtime_argv[14]} == "XDG_DATA_HOME=$home/.local/share" \
   && ${runtime_argv[15]} == --ct-env && ${runtime_argv[16]} == MSK_NPM_GLOBAL_BASE=/opt/msk/npm-global \
-  && ${runtime_argv[17]} == --ct-bootstrap && ${runtime_argv[18]} == "$package_bin/mkchad-container-bootstrap" \
-  && ${runtime_argv[19]} == -- && ${runtime_argv[20]} == "$image" \
-  && ${runtime_argv[21]} == /usr/bin/env && ${runtime_argv[22]} == HOME=/nonexistent \
-  && ${runtime_argv[23]} == "$package_bin/mkchad-opencode-server-image" && ${runtime_argv[24]} == status \
-  && ${runtime_argv[25]} == --json && ${runtime_argv[26]} == --host-evidence-v1 ]] || {
+  && ${runtime_argv[17]} == --ct-gpu && ${runtime_argv[18]} == nvidia \
+  && ${runtime_argv[19]} == --ct-bootstrap && ${runtime_argv[20]} == "$package_bin/mkchad-container-bootstrap" \
+  && ${runtime_argv[21]} == -- && ${runtime_argv[22]} == "$image" \
+  && ${runtime_argv[23]} == /usr/bin/env && ${runtime_argv[24]} == HOME=/nonexistent \
+  && ${runtime_argv[25]} == "$package_bin/mkchad-opencode-server-image" && ${runtime_argv[26]} == status \
+  && ${runtime_argv[27]} == --json && ${runtime_argv[28]} == --host-evidence-v1 ]] || {
   printf '%s\n' 'status foreground transport argv changed' >&2; exit 1;
 }
-python3 - "${runtime_argv[27]}" "$fake/singularity-real" <<'PY'
+python3 - "${runtime_argv[29]}" "$fake/singularity-real" <<'PY'
 import base64
 import json
 import os
@@ -225,7 +227,7 @@ set -e
   printf '%s\n' 'status did not use the canonical checkout-shaped CT_ROOT' >&2; exit 1;
 }
 mapfile -t alternate_status_argv < "$status_log"
-[[ ${alternate_status_argv[18]} == "$package_bin/mkchad-container-bootstrap" ]] || {
+[[ ${alternate_status_argv[20]} == "$package_bin/mkchad-container-bootstrap" ]] || {
   printf '%s\n' 'CT_ROOT redirected the launcher-relative server bootstrap' >&2; exit 1;
 }
 
@@ -429,11 +431,12 @@ mapfile -t mkchad_runtime_argv < "$runtime_log"
   && ${mkchad_runtime_argv[13]} == --ct-env && ${mkchad_runtime_argv[14]} == "XDG_STATE_HOME=$state_default" \
   && ${mkchad_runtime_argv[21]} == --ct-env && ${mkchad_runtime_argv[22]} == MSK_NPM_GLOBAL_BASE=/opt/msk/npm-global \
   && ${mkchad_runtime_argv[23]} == --ct-env && ${mkchad_runtime_argv[24]} == "OPENCODE_CONFIG=$config/mkchad/opencode.jsonc" \
-  && ${mkchad_runtime_argv[25]} == --ct-bootstrap && ${mkchad_runtime_argv[26]} == "$package_bin/mkchad-container-bootstrap" \
-  && ${mkchad_runtime_argv[27]} == -- && ${mkchad_runtime_argv[28]} == "$image" \
-  && ${mkchad_runtime_argv[29]} == --mkchad-payload-cwd \
-  && ${mkchad_runtime_argv[31]} == -- && ${mkchad_runtime_argv[32]} == --mkchad-nvim \
-  && ${mkchad_runtime_argv[33]} == 'file with spaces' ]] || {
+  && ${mkchad_runtime_argv[25]} == --ct-gpu && ${mkchad_runtime_argv[26]} == nvidia \
+  && ${mkchad_runtime_argv[27]} == --ct-bootstrap && ${mkchad_runtime_argv[28]} == "$package_bin/mkchad-container-bootstrap" \
+  && ${mkchad_runtime_argv[29]} == -- && ${mkchad_runtime_argv[30]} == "$image" \
+  && ${mkchad_runtime_argv[31]} == --mkchad-payload-cwd \
+  && ${mkchad_runtime_argv[33]} == -- && ${mkchad_runtime_argv[34]} == --mkchad-nvim \
+  && ${mkchad_runtime_argv[35]} == 'file with spaces' ]] || {
   printf '%s\n' 'MkChad launcher did not use the shared persistent instance contract' >&2; exit 1;
 }
 
@@ -551,6 +554,58 @@ mapfile -t shell_profile_argv < "$work/nvim-shell-persistent-profile.log"
   printf '%s\n' 'nvim_shell payload did not retain its caller arguments and working directory' >&2; exit 1;
 }
 
+cpu_identity=
+for launcher in "$installed_wrapper" "$installed_mkchad" "$installed_nvim" "$installed_nvim_shell"; do
+  set +e
+  env -u SINGULARITY_CONTAINER -u APPTAINER_CONTAINER "${base_env[@]}" \
+    MKCHAD_GPU=none CT_ROOT="$alternate_link" "$launcher" start --json
+  cpu_status=$?
+  set -e
+  [[ $cpu_status == 23 && $(<"$runtime_log") == *$'--ct-gpu\nnone\n'* ]] || {
+    printf '%s\n' 'CPU-only launcher did not pass the explicit mode' >&2; exit 1;
+  }
+  selected_cpu_identity=$(persistent_identity "$runtime_log")
+  [[ $selected_cpu_identity != "$server_identity" && $selected_cpu_identity =~ ^[0-9a-f]{64}$ ]] || {
+    printf '%s\n' 'CPU-only launcher reused the NVIDIA identity' >&2; exit 1;
+  }
+  [[ -z $cpu_identity || $selected_cpu_identity == "$cpu_identity" ]] || {
+    printf '%s\n' 'CPU-only launchers did not share one identity' >&2; exit 1;
+  }
+  cpu_identity=$selected_cpu_identity
+  for mode in '' invalid amd; do
+    rm -f "$runtime_log" "$launcher_log"
+    set +e
+    env -u SINGULARITY_CONTAINER -u APPTAINER_CONTAINER "${base_env[@]}" \
+      "MKCHAD_GPU=$mode" CT_ROOT="$alternate_link" "$launcher" start --json \
+      >"$work/gpu-invalid.out" 2>"$work/gpu-invalid.err"
+    gpu_invalid_status=$?
+    set -e
+    [[ $gpu_invalid_status == 1 && ! -e $runtime_log && ! -e $launcher_log \
+      && $(<"$work/gpu-invalid.err") == *'MKCHAD_GPU must be none or nvidia'* ]] || {
+      printf '%s\n' 'invalid GPU mode reached a persistent dispatcher' >&2; exit 1;
+    }
+  done
+done
+set +e
+env -u SINGULARITY_CONTAINER -u APPTAINER_CONTAINER "${base_env[@]}" \
+  MKCHAD_GPU=none "$installed_wrapper" status --json
+cpu_status_status=$?
+set -e
+[[ $cpu_status_status == 19 && $(<"$status_log") == *$'--ct-gpu\nnone\n'* ]] || {
+  printf '%s\n' 'foreground status did not honor the CPU-only mode' >&2; exit 1;
+}
+rm -f "$status_log" "$launcher_log"
+set +e
+env -u SINGULARITY_CONTAINER -u APPTAINER_CONTAINER "${base_env[@]}" \
+  MKCHAD_GPU=invalid "$installed_wrapper" status --json \
+  >"$work/status-gpu-invalid.out" 2>"$work/status-gpu-invalid.err"
+status_gpu_invalid_status=$?
+set -e
+[[ $status_gpu_invalid_status == 1 && ! -e $status_log && ! -e $launcher_log \
+  && $(<"$work/status-gpu-invalid.err") == *'MKCHAD_GPU must be none or nvidia'* ]] || {
+  printf '%s\n' 'invalid GPU mode reached the foreground dispatcher' >&2; exit 1;
+}
+
 custom_state="$work/state root"
 mkdir -p "$custom_state"
 rm -f "$runtime_log" "$launcher_log"
@@ -573,8 +628,9 @@ mapfile -t custom_runtime_argv < "$runtime_log"
   && ${custom_runtime_argv[16]} == "XDG_STATE_HOME=$custom_state" \
   && ${custom_runtime_argv[25]} == --ct-env \
   && ${custom_runtime_argv[26]} == "OPENCODE_CONFIG=$config/mkchad/opencode.jsonc" \
-  && ${custom_runtime_argv[27]} == --ct-bootstrap \
-  && ${custom_runtime_argv[35]} == start && ${custom_runtime_argv[36]} == --json ]] || {
+  && ${custom_runtime_argv[27]} == --ct-gpu && ${custom_runtime_argv[28]} == nvidia \
+  && ${custom_runtime_argv[29]} == --ct-bootstrap \
+  && ${custom_runtime_argv[37]} == start && ${custom_runtime_argv[38]} == --json ]] || {
   printf '%s\n' 'custom state root was not forwarded and bound identically' >&2; exit 1;
 }
 cp "$runtime_log" "$work/custom-server-persistent-profile.log"

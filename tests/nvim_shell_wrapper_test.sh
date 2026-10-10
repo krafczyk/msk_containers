@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+unset MKCHAD_GPU
 
 work=${1:?pass a task-specific directory beneath /tmp/mkchad-v1}
 wrapper=${2:?pass the nvim_shell path}
@@ -114,6 +115,7 @@ argc=${#argv[@]}
   && ${argv[5]} == --ct-env && ${argv[6]} == MKCHAD_PERSISTENT_INSTANCE=1 \
   && ${argv[7]} == --ct-env && ${argv[8]} == MKCHAD_NVIM_IMAGE=1 \
   && ${argv[9]} == --ct-env && ${argv[10]} == NVIM_APPNAME=mkchad \
+  && ${argv[argc - 11]} == --ct-gpu && ${argv[argc - 10]} == nvidia \
   && ${argv[argc - 9]} == --ct-bootstrap && ${argv[argc - 8]} == "$package_bin/mkchad-container-bootstrap" \
   && ${argv[argc - 7]} == -- && ${argv[argc - 6]} == "$image" \
   && ${argv[argc - 5]} == --mkchad-payload-cwd && ${argv[argc - 4]} == "$PWD" \

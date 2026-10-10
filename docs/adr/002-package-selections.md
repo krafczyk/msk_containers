@@ -123,11 +123,17 @@ Every maintained Dockerfile owns the `container-tools` source selection. It
 clones `https://github.com/krafczyk/container_tools.git`, checks out a reviewed
 full commit, verifies detached `HEAD`, then configures, builds, and installs the
 static executable with CMake under `/opt/msk/container-tools`. All maintained
-architectures select `b03c42a2965c3d9c2696662b6928a113c4d698f3`;
+architectures select `54599d8852362ce83e061b56beaeb5dc78fe83f3`;
 x86_64 and aarch64 use `musl-gcc`, while PPC64LE uses GCC and `glibc-static`.
 Each Dockerfile verifies the compiled human and JSON version identity,
 including its source commit and `ct-mount-plan-v1` grammar, before removing its
 temporary source and build directories.
+
+This revision adds explicit `--ct-gpu none|nvidia` support to foreground and
+persistent SingularityCE/Apptainer launches, with mode-separated instance
+identity. MkChad host launchers select NVIDIA by default and accept
+`MKCHAD_GPU=none` for CPU-only operation. Native runtimes supply host device and
+driver-library bindings; this selection adds no CUDA toolkit or GPU allocation.
 
 The installed `bin/` directory is near the front of the image `PATH`. No image
 build script resolves, bootstraps, stages, or invokes a host `container-tools`

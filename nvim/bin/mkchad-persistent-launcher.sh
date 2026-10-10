@@ -1,16 +1,29 @@
 #!/usr/bin/env bash
 
+# Shared GPU selection and persistent dispatch for MkChad host launchers.
+mkchad_persistent_launcher_dir=$(dirname "$(realpath "${BASH_SOURCE[0]}")")
+mkchad_persistent_bootstrap="$mkchad_persistent_launcher_dir/mkchad-container-bootstrap"
+
+# Print the validated MKCHAD_GPU mode: nvidia when unset, or none for CPU-only
+# launches. Takes no arguments; returns 1 with a stderr diagnostic for any other
+# value (including empty), without dispatching or changing runtime state.
+mkchad_gpu_mode() {
+  case ${MKCHAD_GPU-nvidia} in
+    none | nvidia) printf '%s\n' "${MKCHAD_GPU-nvidia}" ;;
+    *) printf '%s\n' 'mkchad launcher: MKCHAD_GPU must be none or nvidia' >&2; return 1 ;;
+  esac
+}
+
 # Launch a payload through the fixed persistent MkChad profile. The first two
 # parameters are the selected runtime and image; remaining arguments are the
 # payload passed to the bootstrap. Payload command, environment, and working
 # directory are deliberately after the profile separator and do not select an
-# instance. Returns nonzero before dispatch on invalid host setup; otherwise
+# instance. MKCHAD_GPU defaults to nvidia; none selects a distinct CPU profile.
+# Returns nonzero before dispatch on invalid GPU mode or host setup; otherwise
 # replaces the caller with the persistent container dispatcher.
-mkchad_persistent_launcher_dir=$(dirname "$(realpath "${BASH_SOURCE[0]}")")
-mkchad_persistent_bootstrap="$mkchad_persistent_launcher_dir/mkchad-container-bootstrap"
-
 mkchad_persistent_exec() {
   local runtime=$1 image=$2
+  local gpu_mode
   local payload_cwd=$PWD
   local runtime_dir="$HOME/.local/share/mkchad/tmp"
   local config_home=${XDG_CONFIG_HOME:-"$HOME/.config"}
@@ -25,6 +38,7 @@ mkchad_persistent_exec() {
 
   shift 2
 
+  gpu_mode=$(mkchad_gpu_mode) || return $?
   [[ $state_home == /* ]] || {
     printf 'mkchad persistent launcher: XDG_STATE_HOME must be an absolute path: %s\n' "$state_home" >&2
     return 1
@@ -64,6 +78,7 @@ mkchad_persistent_exec() {
     --ct-env "XDG_DATA_HOME=$data_home" \
     --ct-env "MSK_NPM_GLOBAL_BASE=$npm_container_base" \
     --ct-env "OPENCODE_CONFIG=$opencode_config" \
+    --ct-gpu "$gpu_mode" \
     --ct-bootstrap "$mkchad_persistent_bootstrap" \
     -- "$image" --mkchad-payload-cwd "$payload_cwd" -- "$@"
 }
