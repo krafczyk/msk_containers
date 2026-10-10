@@ -15,9 +15,10 @@ repo=$(git rev-parse --show-toplevel)
 fixture="$work/fixture"
 home="$work/home"
 recovery="$work/recovery"
-mkdir -p "$fixture" "$home" "$recovery"
+mkdir -p "$fixture/nvim" "$home" "$recovery"
 chmod 700 "$recovery"
-cp -a "$repo/bin" "$repo/container_tools" "$repo/nvim" "$fixture/"
+cp -a "$repo/bin" "$fixture/"
+cp -a "$repo/nvim/bin" "$fixture/nvim/"
 
 installer="$fixture/bin/install_nvim.sh"
 target="$home/.local/bin"
