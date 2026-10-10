@@ -299,7 +299,7 @@ there without an upstream PPC64LE release.
 ## Verified OpenCode Release
 
 The x86 and ARM images install the public MkChad OpenCode release
-`1.18.35-mkchad.1`, built from commit `11fa9ea37ad6ed9bbd184664dc2c9fad9b79f8f7`.
+`1.18.35-mkchad.2`, built from commit `6356184ac960c833dab7880edfac73c2d0c59935`.
 The Dockerfiles download only the architecture-specific GitHub release tarball
 over HTTPS with failure-preserving curl options, verify its pinned SHA-256 before
 global npm installation, and require `opencode --version` to equal the release
@@ -307,8 +307,21 @@ version.
 
 | Architecture | Release asset | SHA-256 |
 | --- | --- | --- |
-| x86_64 | `opencode-ai-1.18.35-mkchad.1-linux-x64.tgz` | `0f571deaf269fbdc60764ad7afaa6ecce2abf88697ff3762dcc2b9e04fab5102` |
-| aarch64 | `opencode-ai-1.18.35-mkchad.1-linux-arm64.tgz` | `80a5174511a5e0d416d96b5e02e5d56a8c74e791c072b214d126fb0809b887ff` |
+| x86_64 | `opencode-ai-1.18.35-mkchad.2-linux-x64.tgz` | `574d331bda7441c02b441376593101c40cda95bf939c1f5faebe0bc482bfaaf1` |
+| aarch64 | `opencode-ai-1.18.35-mkchad.2-linux-arm64.tgz` | `745e0715b52adaa5b94e2d73d59b574b73dc36952f717b3b3613bf8d8c95379f` |
+
+Native x64 and ARM64 rehearsal [38029411371](https://github.com/krafczyk/opencode/actions/runs/38029411371)
+and publication [38029629696](https://github.com/krafczyk/opencode/actions/runs/38029629696)
+passed, including npm installation, exact version checks, and managed-upgrade
+refusal. GitHub release `408713970` is published and immutable. Independently
+downloaded assets pass `SHA256SUMS` and match rehearsal bytes exactly.
+
+This revision adds `compaction.max_tokens`, a positive-integer V1 automatic-
+compaction ceiling that defaults to 180000. Hosts can select 360000 while
+retaining lower model-limit thresholds, reserved headroom, and retained history.
+Adopting the setting requires the new binary and an OpenCode server restart.
+These verified package pins define the next container build inputs; they do not
+establish that a new Docker/SIF image has been built or installed.
 
 The verified package is installed in the embedded Node.js global prefix beneath
 `/nvim`, which is an immutable image baseline. At runtime,

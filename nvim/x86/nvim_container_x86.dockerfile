@@ -225,10 +225,10 @@ RUN set -eux; \
 
 # Baseline tools make a fresh MkChad launch work before a user-managed runtime
 # update has been installed.  The latter takes precedence when mounted.
-ARG OPENCODE_VERSION=1.18.35-mkchad.1
-ARG OPENCODE_RELEASE_BASE=https://github.com/krafczyk/opencode/releases/download/v1.18.35-mkchad.1
-ARG OPENCODE_ASSET=opencode-ai-1.18.35-mkchad.1-linux-x64.tgz
-ARG OPENCODE_SHA256=0f571deaf269fbdc60764ad7afaa6ecce2abf88697ff3762dcc2b9e04fab5102
+ARG OPENCODE_VERSION=1.18.35-mkchad.2
+ARG OPENCODE_RELEASE_BASE=https://github.com/krafczyk/opencode/releases/download/v1.18.35-mkchad.2
+ARG OPENCODE_ASSET=opencode-ai-1.18.35-mkchad.2-linux-x64.tgz
+ARG OPENCODE_SHA256=574d331bda7441c02b441376593101c40cda95bf939c1f5faebe0bc482bfaaf1
 
 # Keep the reviewed package in Node's embedded immutable prefix. The mounted
 # user prefix remains earlier on PATH at runtime and can intentionally override it.
