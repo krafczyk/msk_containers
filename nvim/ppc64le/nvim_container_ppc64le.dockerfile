@@ -42,7 +42,7 @@ ENV PATH="/opt/msk/container-tools/bin:$PATH"
 RUN localedef -i en_US -f UTF-8 en_US.UTF-8
 
 ARG STYLUA_VERSION=2.5.2
-ARG AST_GREP_VERSION=0.44.1
+ARG AST_GREP_VERSION=0.50.0
 ARG LUACHECK_VERSION=1.2.0-1
 RUN cargo install --locked --root /usr --version "${STYLUA_VERSION}" \
       --features luajit stylua && \

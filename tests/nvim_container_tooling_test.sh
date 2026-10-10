@@ -187,7 +187,7 @@ assert_browser_tooling() {
   for architecture in x86 aarch64; do
     dockerfile="$repo/nvim/$architecture/nvim_container_${architecture}.dockerfile"
     assert_exact_line_count "$dockerfile" "    xdg-utils ffmpeg-free chromium chromium-headless chromedriver \\" 1
-    assert_exact_line_count "$dockerfile" 'ARG PLAYWRIGHT_VERSION=1.61.1' 1
+    assert_exact_line_count "$dockerfile" 'ARG PLAYWRIGHT_VERSION=1.64.0' 1
     assert_exact_line_count "$dockerfile" 'ARG OPENCODE_PLAYWRIGHT_VERSION=1.59.1' 1
     assert_exact_line_count "$dockerfile" 'ENV PLAYWRIGHT_BROWSERS_PATH=/opt/msk/playwright-browsers' 1
     assert_exact_line_count "$dockerfile" "    npm install --prefix /opt/msk/opencode-playwright --save-exact \\" 1
@@ -227,7 +227,7 @@ assert_cache_order() {
     jdtls=$(line_number "$dockerfile" '# Install Eclipse JDTLS')
     jdtls_path=$(line_number "$dockerfile" 'ENV PATH=/nvim/jdtls/bin:$PATH')
     luals_path=$(line_number "$dockerfile" 'ENV PATH="/nvim/lua-language-server/bin:$PATH"')
-    browser=$(line_number "$dockerfile" 'ARG AGENT_BROWSER_VERSION=0.32.2')
+    browser=$(line_number "$dockerfile" 'ARG AGENT_BROWSER_VERSION=')
     container_tools=$(line_number "$dockerfile" '# Build/install container-tools')
     opencode=$(line_number "$dockerfile" 'ARG OPENCODE_VERSION=')
     manifest=$(line_number "$dockerfile" 'COPY component-manifest.json /usr/share/mkchad/component-manifest.json')
@@ -267,4 +267,44 @@ assert_definition_owned_builds
 assert_browser_tooling
 assert_cache_order
 assert_documentation
+python3 - "$repo" <<'PY'
+import json
+from pathlib import Path
+import re
+import sys
+
+repo = Path(sys.argv[1])
+manifest = json.loads((repo / "nvim/component-manifest.json").read_text())
+versions = {item["target_component"]: item["contract"]["version"] for item in manifest["relationships"]}
+expected = {
+    "PROOT_VERSION": "v5.5.0",
+    "PROOT_REVISION": "25dc6a3134891f98a79f57ce1c2c1b23ff15cad1",
+    "PROOT_UTHASH_REVISION": "e493aa90a2833b4655927598f169c31cfcdf7861",
+    "NODE_VER": "24.21.0",
+    "JDTLS_MILESTONE": "1.61.0",
+    "AST_GREP_VERSION": "0.50.0",
+    "BUN_VERSION": "1.4.2",
+    "BUN_RELEASE_BASE": "https://github.com/oven-sh/bun/releases/download/bun-v1.4.2",
+    "AGENT_BROWSER_VERSION": "0.39.0",
+    "PUPPETEER_VERSION": "25.13.0",
+    "OPENCODE_VERSION": versions["opencode"],
+}
+hashes = {
+    "x86": "36368faef7527875d5ffa52e53cd48021741f2a83eb6208a8dd64068d422a913",
+    "aarch64": "54328bbc2d9c8e0c9f892c544d66c57a83b84139e34909e5ee81758f1ac8fda7",
+}
+for arch in hashes:
+    text = (repo / f"nvim/{arch}/nvim_container_{arch}.dockerfile").read_text()
+    pins = dict(re.findall(r"^(?:ARG|ENV) (\w+)=(\S+)$", text, re.M))
+    for name, value in expected.items():
+        assert pins.get(name) == value, f"{arch}: {name} drifted"
+    assert pins["BUN_SHA256"] == hashes[arch], f"{arch}: Bun checksum drifted"
+    assert f"--branch v{versions['prereq-neovim']} https://github.com/neovim/neovim" in text
+    assert "--branch 3.19.1 https://github.com/LuaLS/lua-language-server" in text
+    assert "selenium==4.51.0" in text
+    assert pins["NODE_VER"] == versions["prereq-node"]
+assert versions["prereq-neovim"] == "0.12.6"
+assert manifest["build_id"] == f"nvim-{versions['prereq-neovim']}-node-{versions['prereq-node']}-opencode-{versions['opencode']}"
+assert "ARG AST_GREP_VERSION=0.50.0" in (repo / "nvim/ppc64le/nvim_container_ppc64le.dockerfile").read_text()
+PY
 printf '%s\n' 'nvim container tooling tests passed'

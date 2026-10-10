@@ -42,8 +42,8 @@ RUN localedef -i en_US -f UTF-8 en_US.UTF-8
 # A read-only image needs stable build and runtime-owned npm directories.
 RUN mkdir -p /nvim /opt/msk/npm-global
 
-ARG PROOT_VERSION=v5.4.0
-ARG PROOT_REVISION=bd5a5f63d72f8210d8cee76195eb9f0749e5bd70
+ARG PROOT_VERSION=v5.5.0
+ARG PROOT_REVISION=25dc6a3134891f98a79f57ce1c2c1b23ff15cad1
 ARG PROOT_UTHASH_REVISION=e493aa90a2833b4655927598f169c31cfcdf7861
 # PRoot derives its version from Git refs, so retain only the verified release tag.
 RUN set -eux; \
@@ -91,7 +91,7 @@ RUN echo "/usr/lib" > /etc/ld.so.conf.d/usr-lib.conf && \
 
 # Clone neovim
 RUN cd /nvim && \
-    git clone --depth 1 --branch v0.12.4 https://github.com/neovim/neovim
+    git clone --depth 1 --branch v0.12.6 https://github.com/neovim/neovim
 
 # Build dependencies
 RUN cd /nvim/neovim && \
@@ -110,14 +110,14 @@ RUN cd /nvim/neovim && \
     cmake --install build
 
 # Install lua language server
-RUN git clone --depth 1 --branch 3.17.1 https://github.com/LuaLS/lua-language-server /nvim/lua-language-server && \
+RUN git clone --depth 1 --branch 3.19.1 https://github.com/LuaLS/lua-language-server /nvim/lua-language-server && \
     cd /nvim/lua-language-server && \
     bash ./make.sh
 
 ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk
 
 # Install Eclipse JDTLS
-ENV JDTLS_MILESTONE=1.56.0
+ENV JDTLS_MILESTONE=1.61.0
 RUN set -eux;  cd /nvim; \
     base="https://download.eclipse.org/jdtls/milestones/${JDTLS_MILESTONE}"; \
     file="$(curl -fsSL ${base}/latest.txt | tr -d '\n')"; \
@@ -133,7 +133,7 @@ RUN set -eux;  cd /nvim; \
     test -x /nvim/jdtls/bin/jdtls
 
 ARG STYLUA_VERSION=2.5.2
-ARG AST_GREP_VERSION=0.44.1
+ARG AST_GREP_VERSION=0.50.0
 ARG LUACHECK_VERSION=1.2.0-1
 RUN cargo install --locked --root /usr --version "${STYLUA_VERSION}" \
       --features luajit stylua && \
@@ -146,14 +146,14 @@ RUN cargo install --locked --root /usr --version "${STYLUA_VERSION}" \
 RUN pip3 install --prefix /usr \
     "git+https://github.com/pydantic/pydantic@main#egg=pydantic" \
     openai jedi pynvim python-lsp-server[all] "jsonschema>=4.23,<5" \
-    selenium==4.46.0 \
+    selenium==4.51.0 \
     py-spy && \
     python3 -c 'from jsonschema import Draft202012Validator' && \
     ast-grep --version && \
     ffmpeg -version && \
     shellcheck --version
 
-ENV NODE_VER=24.18.0
+ENV NODE_VER=24.21.0
 
 # Install Node.js and npm
 RUN curl -sL "https://nodejs.org/dist/v${NODE_VER}/node-v${NODE_VER}-linux-x64.tar.gz" | tar -xzC /nvim
@@ -166,10 +166,10 @@ ENV PATH=/nvim/jdtls/bin:$PATH
 
 ENV PATH="/nvim/lua-language-server/bin:$PATH"
 
-ARG AGENT_BROWSER_VERSION=0.32.2
-ARG PLAYWRIGHT_VERSION=1.61.1
+ARG AGENT_BROWSER_VERSION=0.39.0
+ARG PLAYWRIGHT_VERSION=1.64.0
 ARG OPENCODE_PLAYWRIGHT_VERSION=1.59.1
-ARG PUPPETEER_VERSION=25.3.0
+ARG PUPPETEER_VERSION=25.13.0
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/msk/playwright-browsers
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 ENV PUPPETEER_SKIP_DOWNLOAD=true
@@ -190,10 +190,10 @@ RUN npm install --prefix /opt/msk/browser-tools --save-exact \
     agent-browser --version
 
 # Bun supports source authoring and testing; OpenCode uses its verified release.
-ARG BUN_VERSION=1.3.14
-ARG BUN_RELEASE_BASE=https://github.com/oven-sh/bun/releases/download/bun-v1.3.14
+ARG BUN_VERSION=1.4.2
+ARG BUN_RELEASE_BASE=https://github.com/oven-sh/bun/releases/download/bun-v1.4.2
 ARG BUN_ASSET=bun-linux-x64.zip
-ARG BUN_SHA256=951ee2aee855f08595aeec6225226a298d3fea83a3dcd6465c09cbccdf7e848f
+ARG BUN_SHA256=36368faef7527875d5ffa52e53cd48021741f2a83eb6208a8dd64068d422a913
 RUN set -eux; \
     bun_archive="/tmp/${BUN_ASSET}"; \
     bun_extract="/tmp/bun"; \

@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-07-16
+- Dependency refresh: 2026-10-10
 
 ## Context
 
@@ -151,7 +152,7 @@ are not built or installed.
 
 | Component | Architectures | Version/source policy | Purpose |
 | --- | --- | --- | --- |
-| PRoot | x86, ARM | Release `v5.4.0`, root commit `bd5a5f63d72f8210d8cee76195eb9f0749e5bd70` | Provides the ptrace-backed full-root fallback when the host policy does not permit Bubblewrap. |
+| PRoot | x86, ARM | Release `v5.5.0`, root commit `25dc6a3134891f98a79f57ce1c2c1b23ff15cad1` | Provides the ptrace-backed full-root fallback when the host policy does not permit Bubblewrap. |
 | PRoot `lib/uthash` | x86, ARM | Required gitlink and checked-out submodule commit `e493aa90a2833b4655927598f169c31cfcdf7861` | Provides PRoot's required hash-table header dependency. |
 
 The verified build checkout is staged at `/tmp/proot`. Each image builds only
@@ -229,7 +230,7 @@ The Dockerfiles directly install these Python packages with pip:
 | `pynvim` | All | Unpinned | Provides the Python client and remote-plugin integration for Neovim. |
 | `python-lsp-server[all]` | All | Unpinned, including its `all` extra | Provides a Python language server and its complete optional analysis, formatting, and linting feature set. |
 | `jsonschema` | All | `>=4.23,<5` | Provides Draft 2020-12 JSON Schema validation for OpenCode and Compound Engineering structured artifacts while remaining within the compatible major release. |
-| `selenium` | x86, ARM | Pinned to `4.46.0` | Provides Python WebDriver browser automation against the version-aligned Fedora ChromeDriver. |
+| `selenium` | x86, ARM | Pinned to `4.51.0` | Provides Python WebDriver browser automation against the version-aligned Fedora ChromeDriver. |
 | `py-spy` | x86, ARM | Unpinned | Provides low-overhead Python sampling. Attaching to an existing process remains subject to the runtime's ptrace policy and may require `SYS_PTRACE`. |
 
 The broad and floating pip selections favor a batteries-included interactive
@@ -242,9 +243,12 @@ architecture can use an explicitly selected upstream build.
 
 | Architecture | Node.js version | Archive architecture |
 | --- | --- | --- |
-| x86_64 | `24.18.0` | `linux-x64` |
-| aarch64 | `24.18.0` | `linux-arm64` |
+| x86_64 | `24.21.0` | `linux-x64` |
+| aarch64 | `24.21.0` | `linux-arm64` |
 | ppc64le | `20.19.3` | `linux-ppc64le` |
+
+The maintained images follow the Node.js 24 LTS line rather than changing Node
+major during this refresh, preserving the writable `node24` npm-prefix identity.
 
 The following npm packages are installed globally into the immutable image
 baseline:
@@ -253,7 +257,7 @@ baseline:
 | --- | --- | --- | --- |
 | `neovim` | All | Unpinned | Provides the Node.js client used by Neovim remote plugins and integrations. |
 | `basedpyright` | All | Unpinned | Provides Python type checking and language-server support. |
-| `agent-browser` | x86, ARM | Pinned to `0.32.2` | Provides the browser-driving CLI used by Compound Engineering browser testing, dogfood, debugging, and visual-polish workflows on both Node.js 24 images. |
+| `agent-browser` | x86, ARM | Pinned to `0.39.0` | Provides the browser-driving CLI used by Compound Engineering browser testing, dogfood, debugging, and visual-polish workflows on both Node.js 24 images. |
 
 ## Bun Authoring Runtime
 
@@ -262,16 +266,21 @@ aarch64. It is not required for normal OpenCode runtime: OpenCode continues to
 use its separately verified release tarball and is not built or installed with
 Bun in the image.
 
-The Dockerfiles download Bun `1.3.14` from the immutable upstream GitHub release
-`bun-v1.3.14` over HTTPS with the failure-preserving curl options used for other
+The Dockerfiles download Bun `1.4.2` from the published upstream GitHub release
+`bun-v1.4.2` over HTTPS with the failure-preserving curl options used for other
 verified releases. Each archive is verified with its pinned SHA-256 before
 extraction. The image installs the binary at `/opt/msk/bun/bin/bun` and exposes
 `bun` and `bunx` through `/usr/bin` symlinks.
 
 | Architecture | Release asset | SHA-256 |
 | --- | --- | --- |
-| x86_64 | `bun-linux-x64.zip` | `951ee2aee855f08595aeec6225226a298d3fea83a3dcd6465c09cbccdf7e848f` |
-| aarch64 | `bun-linux-aarch64.zip` | `a27ffb63a8310375836e0d6f668ae17fa8d8d18b88c37c821c65331973a19a3b` |
+| x86_64 | `bun-linux-x64.zip` | `36368faef7527875d5ffa52e53cd48021741f2a83eb6208a8dd64068d422a913` |
+| aarch64 | `bun-linux-aarch64.zip` | `54328bbc2d9c8e0c9f892c544d66c57a83b84139e34909e5ee81758f1ac8fda7` |
+
+The selected bytes agree with upstream `SHASUMS256.txt` and GitHub asset digests.
+The release is not marked immutable by GitHub; the fixed archive hashes make a
+subsequent asset replacement fail verification rather than silently change the
+image input.
 
 At runtime, MkChad bind-mounts an architecture-neutral writable npm parent at
 `/opt/msk/npm-global`. MkChad derives a Node platform/architecture/major key
@@ -323,12 +332,15 @@ JDTLS is installed separately from Fedora packages:
 
 | Architecture | Selection | Reason |
 | --- | --- | --- |
-| x86_64 | Eclipse JDTLS milestone `1.56.0` archive | Uses an identified milestone and verifies the downloaded archive checksum before extraction. |
-| aarch64 | Eclipse JDTLS milestone `1.56.0` archive | Uses the same architecture-neutral Java artifact and checksum verification as x86_64. |
+| x86_64 | Eclipse JDTLS milestone `1.61.0` archive | Uses an identified milestone and verifies the downloaded archive checksum before extraction. |
+| aarch64 | Eclipse JDTLS milestone `1.61.0` archive | Uses the same architecture-neutral Java artifact and checksum verification as x86_64. |
 | ppc64le | Current default branch of `eclipse-jdtls/eclipse.jdt.ls` | Builds JDTLS for an architecture without the selected x86 archive path. |
 
 The PPC selection is floating and should be pinned when a validated revision is
 identified.
+
+JDTLS `1.61.0` still requires Java 21 at minimum, so the existing Java package
+selection and `JAVA_HOME` remain compatible.
 
 ## Neovim Native Dependencies and Tools
 
@@ -356,7 +368,11 @@ every Lua repository.
 
 | Tool | Architectures | Version policy | Reason |
 | --- | --- | --- | --- |
-| ast-grep | All | Cargo crate pinned to `0.44.1` with `--locked` | Provides the `ast-grep` syntax-aware structural search command used by implementation and review workflows. The crate is installed beneath `/opt/msk/ast-grep`, and only its long-form binary is linked into `/usr/bin`; its `sg` alias remains unexposed because Fedora already owns `/usr/bin/sg`. Source installation gives x86, ARM, and PPC the same selected tool where npm's prebuilt CLI does not support PPC. |
+| ast-grep | All | Cargo crate pinned to `0.50.0` with `--locked` | Provides the `ast-grep` syntax-aware structural search command used by implementation and review workflows. The crate is installed beneath `/opt/msk/ast-grep`, and only its long-form binary is linked into `/usr/bin`; its `sg` alias remains unexposed because Fedora already owns `/usr/bin/sg`. Source installation gives x86, ARM, and PPC the same selected tool where npm's prebuilt CLI does not support PPC. |
+
+ast-grep `0.50.0` requires Rust 1.88 or newer and explicit opt-in for custom
+language libraries. Follow its trust/revoke workflow for those libraries rather
+than assuming a project configuration grants permission to load native code.
 
 ## Source-Built Neovim Stack
 
@@ -366,16 +382,16 @@ rather than selected as Fedora packages.
 | Component | Architectures | Version policy | Reason |
 | --- | --- | --- | --- |
 | OpenResty LuaJIT | All | Floating branch `v2.1-agentzh` | Provides a common LuaJIT-compatible runtime, including PPC64LE interpreter support. See ADR 001. |
-| Neovim | x86, ARM | Tag `v0.12.4` | Provides the current editor and satisfies the Sprint Loop plugin's Neovim 0.12 minimum. |
+| Neovim | x86, ARM | Tag `v0.12.6` | Provides the current stable editor patch and satisfies the Sprint Loop plugin's Neovim 0.12 minimum. |
 | Neovim | PPC | Tag `v0.11.2` | Provides the currently validated PPC64LE editor baseline. It does not satisfy plugins that require Neovim 0.12. |
-| Lua Language Server | x86, ARM | Tag `3.17.1` | Provides Lua diagnostics, completion, and language intelligence. ARM uses a modified build sequence because upstream tests fail under the cross-build environment. |
+| Lua Language Server | x86, ARM | Tag `3.19.1` | Provides Lua diagnostics, completion, and language intelligence. ARM uses a modified build sequence because upstream tests fail under the cross-build environment. |
 | Lua Language Server | PPC | Tag `3.15.0` | Provides the currently selected PPC64LE Lua language tooling. |
 
 ## Browser and Browser-Automation Tooling
 
 Browser tooling is installed in both the x86 and ARM images. Both images use
 Neovim 0.12 and Node.js 24, satisfying agent-browser's Node.js 24 requirement,
-Playwright's Node.js 18-or-newer requirement, and Puppeteer `25.3.0`'s Node.js
+Playwright's Node.js 20-or-newer requirement, and Puppeteer `25.13.0`'s Node.js
 `22.12.0`-or-newer requirement. PPC64LE remains excluded because it retains the
 older runtime baseline and lacks the complete upstream browser-tool surface.
 
@@ -388,13 +404,13 @@ older runtime baseline and lacks the complete upstream browser-tool surface.
 | `google-noto-sans-fonts` | Fedora base version | Provides a deterministic general-purpose browser font for rendering and screenshot tests. |
 | `google-noto-color-emoji-fonts` | Fedora base version | Provides deterministic color emoji rendering. |
 | `nss-tools` | Fedora base version | Provides `certutil` for isolated NSS certificate databases used in private-CA browser tests. |
-| `@playwright/test` | npm package pinned to `1.61.1` | Provides Playwright, its test runner, assertions, browser contexts, tracing, and command-line tooling. |
+| `@playwright/test` | npm package pinned to `1.64.0` | Provides Playwright, its test runner, assertions, browser contexts, tracing, and command-line tooling. |
 | OpenCode Playwright compatibility package | `@playwright/test` pinned to `1.59.1` | Retains the package link and browser revision required by the current OpenCode app E2E and timeline suites. |
-| `puppeteer` | npm package pinned to `25.3.0` | Provides Chrome DevTools Protocol and WebDriver BiDi automation for scripts that use the Puppeteer API. |
-| `agent-browser` | npm package pinned to `0.32.2` | Provides a command-oriented browser interface for coding-agent workflows. `AGENT_BROWSER_EXECUTABLE_PATH` selects the existing Fedora Chromium binary instead of downloading a browser into the build user's home. |
-| Playwright Chrome for Testing | Managed by Playwright `1.61.1` under `/opt/msk/playwright-browsers` | Gives Playwright its tested full-browser revision instead of assuming compatibility with Fedora Chromium. |
-| Playwright Chromium headless shell | Managed by Playwright `1.61.1` under `/opt/msk/playwright-browsers` | Supplies the browser revision used by Playwright's default headless Chromium mode. |
-| Playwright ffmpeg | Managed by Playwright `1.61.1` under `/opt/msk/playwright-browsers` | Supports Playwright video recording and related media artifacts. |
+| `puppeteer` | npm package pinned to `25.13.0` | Provides Chrome DevTools Protocol and WebDriver BiDi automation for scripts that use the Puppeteer API. |
+| `agent-browser` | npm package pinned to `0.39.0` | Provides a command-oriented browser interface for coding-agent workflows. `AGENT_BROWSER_EXECUTABLE_PATH` selects the existing Fedora Chromium binary instead of downloading a browser into the build user's home. |
+| Playwright Chrome for Testing | Managed by Playwright `1.64.0` under `/opt/msk/playwright-browsers` | Gives Playwright its tested full-browser revision instead of assuming compatibility with Fedora Chromium. |
+| Playwright Chromium headless shell | Managed by Playwright `1.64.0` under `/opt/msk/playwright-browsers` | Supplies the browser revision used by Playwright's default headless Chromium mode. |
+| Playwright ffmpeg | Managed by Playwright `1.64.0` under `/opt/msk/playwright-browsers` | Supports Playwright video recording and related media artifacts. |
 | OpenCode Playwright Chromium family | Managed by Playwright `1.59.1` under `/opt/msk/playwright-browsers` | Supplies the full Chromium and headless-shell revisions expected by OpenCode's pinned Playwright package. |
 
 The two npm automation packages are installed under
@@ -510,7 +526,7 @@ revision.
 - [Fedora ShellCheck package](https://packages.fedoraproject.org/pkgs/ShellCheck/ShellCheck/)
 - [Playwright installation and requirements](https://playwright.dev/docs/intro)
 - [Puppeteer supported browsers](https://pptr.dev/supported-browsers)
-- [Selenium package](https://pypi.org/project/selenium/4.46.0/)
+- [Selenium package](https://pypi.org/project/selenium/4.51.0/)
 - [agent-browser package](https://www.npmjs.com/package/agent-browser)
 - [ast-grep crate](https://crates.io/crates/ast-grep)
 - [jsonschema package](https://pypi.org/project/jsonschema/)
